@@ -67,28 +67,32 @@ def ztf_rosat_crossmatch(avro_ra, avro_dec, rosat_skycoord, rosat_pos_err, avro_
     
     # Finds the nearest ROSAT source's coordinates to the avro files ra[deg] and dec[deg]
     match = avro_skycoord.match_to_catalog_sky(catalogcoord=rosat_skycoord, nthneighbor=1, )
+    #print(match)
     match_idx = match[0]
-    match_sep2d = match[2]
+    match_sep2d = match[1].value #units [degree]
     
+    # Check that the match index is a numpy.ndarray
+    #if type(match_idx) == np.ndarray:
     fname = avro_fname.split('/')[-1]
-    
     if match_sep2d <= rosat_pos_err[match_idx] * 0.000277778:
         match_result = 'Good! sep2d={} deg'.format(match_sep2d)
-        #print('ZTF   RA: {}, DEC: {}'.format(avro_skycoord.ra, avro_skycoord.dec))
-        #print('ROSAT RA: {}, DEC: {}'.format(rosat_skycoord.ra[match_idx], rosat_skycoord.dec[match_idx]))
-        #print('Match Result: {}\n'.format(match_result))
         
-        
-        print(fname, avro_skycoord.ra, avro_skycoord.dec, rosat_skycoord.ra[match_idx], rosat_skycoord.dec[match_idx], match_result)
-
+        print(fname, avro_skycoord.ra, avro_skycoord.dec, rosat_skycoord.ra[match_idx], rosat_skycoord.dec[match_idx],
+              match_result)
+    
     else:
-        pass
         #match_result = 'Not so good sep2d={} deg'.format(match_sep2d)
-    
-    
+        #print(fname, avro_skycoord.ra, avro_skycoord.dec, rosat_skycoord.ra[match_idx], rosat_skycoord.dec[match_idx],
+        #      match_result)
+        pass
+            
+        
+        
     return avro_skycoord.ra, avro_skycoord.dec, rosat_skycoord.ra[match_idx], rosat_skycoord.dec[match_idx], match_sep2d
 
-
+    #else:
+    #    print("Not able to crossmatch match_idx = {}".format(match_idx))
+    #    pass
     
 def parse_args():
     """Parses command line arguments.
@@ -106,12 +110,15 @@ def parse_args():
 
     #Create help string:
     ztf_path_help = 'Path to the .avro files directory'
+    kafka_path_help = 'Path to the .avro files directory'
     #rosat_skycoords_help = 'ROSAT catalog in astropy.coordinates.sky_coordinate.SkyCoord'
     # Add arguments:
     parser = argparse.ArgumentParser()
-    parser.add_argument('--ztf_path', '-ztf_path', dest = 'ztf_path', action = 'store',
-                        type = str, required = True, help = ztf_path_help)
-    
+    #parser.add_argument('--ztf_path', '-ztf_path', dest = 'ztf_path', action = 'store',
+    #                    type = str, required = False, help = ztf_path_help)
+    parser.add_argument('--kafka_path', '-kafka_path', dest = 'kafka_path', action = 'store',
+                        type = str, required = True, help = kafka_path_help)
+        
     #parser.add_argument('--rosat_skycoords', '-rosat_skycoords', dest = 'rosat_skycoords', action = 'store', type = SkyCoord, required = True, help = rosat_skycoords_help)
 
 
@@ -123,6 +130,9 @@ def parse_args():
 # -------------------------------------------------------------------
 if __name__ == '__main__':
     args = parse_args()
+    
+    ######################################### ROSAT data collection  #############################################
+    
     
     # Open ROSAT catalog
     from astropy.io import fits
@@ -145,42 +155,72 @@ if __name__ == '__main__':
     
     # Put ROSAT ra and dec list in SkyCoord [degrees]
     rosat_skycoord = SkyCoord(ra=rosat_ra_list, dec=rosat_dec_list, frame='icrs', unit=(u.deg))
+    
+    
+    ######################################### ROSAT data collection  #############################################
 
+        
+    #Running data stream
+    import adc.streaming as adcs
+    
+    print('Filename', 'ZTF_RA_[deg]', 'ZTF_Dec_[deg]', 'ROSAT_RA_[deg], ROSAT_Dec_[deg], Sep2d')
+    # "kafka://partnership.alerts.ztf.uw.edu/ztf_20200501_programid1"
+    kafka_path = args.kafka_path
+    with adcs.open(kafka_path, "r", format="avro", start_at="earliest") as stream:
+        for nread, obj in enumerate(stream(progress=True, timeout=30), start=1):
+            #print(nread,obj['objectId'])
+            avro = obj['objectId']
+            avro_ra = obj['candidate']['ra']
+            avro_dec = obj['candidate']['dec']
+            # any other processing
+            stream.commit()
+    
+            #Run Crossmatch function
+            avro_ra_match, avro_dec_match, rosat_ra_match, rosat_dec_match, match_2dsep = ztf_rosat_crossmatch(avro_ra, avro_dec, rosat_skycoord, dfx.err_pos_arcsec, avro)
 
+    
+    stream.commit(defer=False)
+    
+    
+    
+    
+    
+    
+    
     # Store .avro files into a list to interate 
-    ztf_data_dir = args.ztf_path
-    avro_fname_list = glob.glob('{}*.avro'.format(ztf_data_dir))
+    #ztf_data_dir = args.ztf_path
+    #avro_fname_list = glob.glob('{}*.avro'.format(ztf_data_dir))
     #print(avro_fname_list[:5])
 
     # Make a list to store 
-    avro_ra_list = []
-    avro_dec_list = []
-    
-    rosat_ra_list = []
-    rosat_dec_list = []
-    
-    sep2d_list = []
+    #avro_ra_list = []
+    #avro_dec_list = []
+    #
+    #rosat_ra_list = []
+    #rosat_dec_list = []
+    #
+    #sep2d_list = []
     
     # Run crossmatch on .avro files
-    print('Filename', 'ZTF_RA_[deg]', 'ZTF_Dec_[deg]', 'ROSAT_RA_[deg], ROSAT_Dec_[deg], Sep2d')
+    #print('Filename', 'ZTF_RA_[deg]', 'ZTF_Dec_[deg]', 'ROSAT_RA_[deg], ROSAT_Dec_[deg], Sep2d')
     
-    for avro in tqdm(avro_fname_list):
-        
-        # Extract ra and dec values from avro files
-        avro_ra, avro_dec = extract_avro_data(avro)
-        
-        # Run crossmath functions
-        avro_ra_match, avro_dec_match, rosat_ra_match, rosat_dec_match, match_2dsep = ztf_rosat_crossmatch(avro_ra, avro_dec, rosat_skycoord, dfx.err_pos_arcsec, avro)
+    #for avro in tqdm(avro_fname_list):
+    #    
+    #    # Extract ra and dec values from avro files
+    #    avro_ra, avro_dec = extract_avro_data(avro)
+    #    
+    #    # Run crossmath functions
+    #    avro_ra_match, avro_dec_match, rosat_ra_match, rosat_dec_match, match_2dsep = ztf_rosat_crossmatch(avro_ra, avro_dec, rosat_skycoord, dfx.err_pos_arcsec, avro)
 
-        
-        
+        # Append data to a list if needed
         #avro_ra_list.append(avro_ra_match)
         #avro_dec_list.append(avro_dec_match)
         #rosat_ra_list.append(rosat_ra_match)
         #rosat_dec_list.append(rosat_dec_match)
         #sep2d_list.append(match_2dsep)
         
-        
+
+
 
 
 
