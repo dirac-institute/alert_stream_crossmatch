@@ -152,6 +152,7 @@ if __name__ == '__main__':
     
     # List ROSAT error position [arcsec] 
     dfx['err_pos_arcsec'] = np.sqrt(((dfx.XERR*45)**2.+ (dfx.YERR*45)**2.) + 0.6**2.)
+    err_pos_arcsec = dfx['err_pos_arcsec'].values
     
     # Put ROSAT ra and dec list in SkyCoord [degrees]
     rosat_skycoord = SkyCoord(ra=rosat_ra_list, dec=rosat_dec_list, frame='icrs', unit=(u.deg))
@@ -176,7 +177,7 @@ if __name__ == '__main__':
             stream.commit()
     
             #Run Crossmatch function
-            avro_ra_match, avro_dec_match, rosat_ra_match, rosat_dec_match, match_2dsep = ztf_rosat_crossmatch(avro_ra, avro_dec, rosat_skycoord, dfx.err_pos_arcsec, avro)
+            avro_ra_match, avro_dec_match, rosat_ra_match, rosat_dec_match, match_2dsep = ztf_rosat_crossmatch(avro_ra, avro_dec, rosat_skycoord, err_pos_arcsec, avro)
 
     
     stream.commit(defer=False)
@@ -219,17 +220,4 @@ if __name__ == '__main__':
         #rosat_dec_list.append(rosat_dec_match)
         #sep2d_list.append(match_2dsep)
         
-
-
-
-
-
-
-
-
-
-
-
-
-
 
