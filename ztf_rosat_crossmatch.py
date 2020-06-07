@@ -1,4 +1,8 @@
 #!/usr/bin/env python
+# By Myles McKay
+# June 7, 2020
+# ZTF crossmatch with X-Ray Binaries (ROSAT catalog)
+
 import pandas as pd
 from avro.datafile import DataFileReader, DataFileWriter
 from avro.io import DatumReader, DatumWriter
@@ -8,33 +12,33 @@ from astropy.coordinates import SkyCoord
 import astropy.units as u
 import glob
 import argparse
-from tqdm import tqdm
-from tqdm.notebook import tqdm
 
 # Example command line execution:
 
 # $ python ztf_rosat_crossmatch.py --kafka_path="kafka://partnership.alerts.ztf.uw.edu/ztf_20200514_programid1" > kafka_output_20200514.txt
 
-# Extract .avro RA and Dec 
-#def extract_avro_data(fname):
-#    """
-#    Parameters:
-#                fname: str
-#                
-#    
-#    """
-#    with open(fname,'rb') as f:
-#        freader = fastavro.reader(f)
-#        schema = freader.writer_schema # freader.schema - depercated 
-#    
-#        for packet in freader:
-#            avro_ra = packet['candidate']['ra']
-#            avro_dec = packet['candidate']['dec']
-#
-#    return avro_ra, avro_dec
 
 def astroid_rejection(avro_packet):
-    """Astriod rejection checks if the source has at least 2 previous detections > 30 mins apart"""
+    """
+    * WORK IN PROGRESS *
+    
+    Astriod rejection:
+    
+    Looks at the 10 most recent candidate source detections date and time [Julian Date]
+    checks if the source has at least 2 detections > 30 mins apart. The function selects the most recent detection as the
+    fidiucial and take the difference of the following observations. 
+    
+    Parameters:
+                avro_packet: dictionary
+                    Extracted data from the avro file
+                
+    Return:
+            real: boolean
+                True: 2 detections were found to be > 30mins from the most recent observation
+                False: 2 detections were *not* found to be > 30mins from the most recent observation
+    
+    """    
+    
     avro_date0 = float(avro_packet['prv_candidates'][0]['jd'])
     num = 0
     for i in range(1,10):
@@ -63,30 +67,59 @@ def astroid_rejection(avro_packet):
                 real = False
     return real
 
+
+
+
 def ztf_rosat_crossmatch(avro_ra, avro_dec, rosat_skycoord, rosat_pos_err, avro_fname, avro_candid, avro_packet, ingest=False):
     """
     
     Cross match ZTF and ROSAT data using astropy.coordinates.SkyCoord
     
     Parameters:
-                avro_ra: float or list of float
+                avro_ra: float
+                    ZTF source RA (Right Accension) in degree [deg]
                 
-                avro_dec: float or list of float
+                avro_dec: float
+                    ZTF source DEC (Declination) in degree [deg]
                 
-                rosat_skycoord: float or list 
-                
-                rosat_ra_list: pandas.series
-                
-                rosat_dec_list: pandas/series
+                rosat_skycoord: astropy.coordinates.SkyCoord
+                    ROSAT catalog in astropy.coordinates.SkyCoord
+                    
+                rosat_pos_err: pandas.DataFrame
+                    ROSAT postion error list
+                    
+                avro_fname: str
+                    object ID of the ZTF source
+                    
+                avro_candid: str
+                    ZTF candidate ID
+                    
+                avro_packet: dict
+                    ZTF source data avro dictionary
+                    
+                ingest: boolean
+                    Allows the data to be ingested to the Growth Marshal if True
+                    
+
                 
     Return:
-        
-                ztf_rosat_ra_match: float
+            avro_skycoord.ra: float
+                Matched ZTF source RA in degree [deg]
+             
+            avro_skycoord.dec: float
+                Matched ZTF source DEC in degree [deg]
                 
-                ztf_rosat_dec_match: float
+            rosat_skycoord.ra[match_idx]: float
+                Matched ROSAT source RA in degree [deg]
                 
-                match: tuple
-                    Output from Skycoord.match_to_catalog_sky
+            rosat_skycoord.dec[match_idx] float
+                Matched ROSAT source DEC in degree [deg]
+                
+            match_sep2d: float
+                2D seperation between matched sources in units of arcseconds [arcsec]
+            
+            avro_candid: str
+                Matched ZTF candidate ID
     
     """
     
@@ -111,9 +144,9 @@ def ztf_rosat_crossmatch(avro_ra, avro_dec, rosat_skycoord, rosat_pos_err, avro_
         #Run astriod rejection
         result = astroid_rejection(avro_packet)
         if result is True:
-            print(fname, avro_candid, avro_skycoord.ra, avro_skycoord.dec, 
-              rosat_skycoord.ra[match_idx], rosat_skycoord.dec[match_idx],
-              match_result)
+            #print(fname, avro_candid, avro_skycoord.ra, avro_skycoord.dec, 
+            #  rosat_skycoord.ra[match_idx], rosat_skycoord.dec[match_idx],
+            #  match_result)
             
             # Ingest matched data to GROWTH Marshal
             if ingest == True:
@@ -138,7 +171,7 @@ def ztf_rosat_crossmatch(avro_ra, avro_dec, rosat_skycoord, rosat_pos_err, avro_
             avro_candid)
     
     
-# Pulls the programidx from list_programs.cgi
+# Pulls the programidx from list_programs.cgi from Eric Bellm code
 def get_programidx(program_name, username, password):
     '''Given a marshal science program name, it returns its programidx'''
 
@@ -190,16 +223,11 @@ def parse_args():
     #Create help string:
     ztf_path_help = 'Path to the .avro files directory'
     kafka_path_help = 'Path to the .avro files directory'
-    #rosat_skycoords_help = 'ROSAT catalog in astropy.coordinates.sky_coordinate.SkyCoord'
+    
     # Add arguments:
     parser = argparse.ArgumentParser()
-    #parser.add_argument('--ztf_path', '-ztf_path', dest = 'ztf_path', action = 'store',
-    #                    type = str, required = False, help = ztf_path_help)
     parser.add_argument('--kafka_path', '-kafka_path', dest = 'kafka_path', action = 'store',
-                        type = str, required = True, help = kafka_path_help)   
-    #parser.add_argument('--rosat_skycoords', '-rosat_skycoords', dest = 'rosat_skycoords', action = 'store', 
-    #                    type = SkyCoord,required = True, help = rosat_skycoords_help)
-
+                        type = str, required = True, help = kafka_path_help)
 
     # Parse args:
     args = parser.parse_args()
@@ -244,7 +272,7 @@ if __name__ == '__main__':
     import requests
     from astropy.io import ascii
     
-    # Read the secrets - Make a .csv and type username and password for GROTH Marshall 
+    # Read the secrets - Make a .csv and type username and password for GROWTH Marshall 
     secrets = ascii.read('secrets.csv', format='csv')
     
     # GROWTH marshal credentials
@@ -254,13 +282,12 @@ if __name__ == '__main__':
     # Get programidx
     programid14 = get_programidx("X-ray Counterparts", username_marshal, password_marshal)
     
-    print('Filename', 'candid', 'ZTF_RA_[deg]', 'ZTF_Dec_[deg]', 'ROSAT_RA_[deg], ROSAT_Dec_[deg], Sep2d')
-    # "kafka://partnership.alerts.ztf.uw.edu/ztf_20200501_programid1"
-    kafka_path = args.kafka_path
+    #print('Filename', 'candid', 'ZTF_RA_[deg]', 'ZTF_Dec_[deg]', 'ROSAT_RA_[deg], ROSAT_Dec_[deg], Sep2d')
+    
+    kafka_path = args.kafka_path # Example: "kafka://partnership.alerts.ztf.uw.edu/ztf_20200501_programid1"
     with adcs.open(kafka_path, "r", format="avro", start_at="earliest") as stream:
         for nread, obj in enumerate(stream(progress=True, timeout=30), start=1):
         #for nread, obj in enumerate(stream(progress=True, timeout=False)):#, start=1):
-            #print(nread,obj['objectId'])
             avro_fname = obj['objectId']
             avro_ra = obj['candidate']['ra']
             avro_dec = obj['candidate']['dec']
@@ -271,46 +298,6 @@ if __name__ == '__main__':
             avro_ra_match, avro_dec_match, rosat_ra_match, rosat_dec_match, match_2dsep, match_avro_candid = ztf_rosat_crossmatch(avro_ra, avro_dec, rosat_skycoord, err_pos_arcsec, avro_fname, avro_candid, obj, ingest=False)
             
     stream.commit(defer=False)
-            # Astriod rejection checks if the source has a least 2 detections > 30 mins apart
-            #avro_date0 = float(obj['prv_candidates'][0]['jd'])
-            #num = 0
-            #for i in range(1,10):
-            #    try:
-            #        avro_date1 = float(obj['prv_candidates'][i]['jd'])
-            #    except IndexError as err:
-            #        continue
-            #        #print(err)    
-            #    else:
-            #        diff_date = avro_date1 - avro_date0
-            #        print(avro_date0, avro_date1, diff_date)
-            #        if num == 2:
-            #            break
-            #        elif num < 2:
-            #            if diff_date < 0.0208:
-            #                print('Within 30mins')
-            #                i += 1
-            #            elif diff_date > 0.0208:
-            #                print('Longer than 30mins')
-            #                num += 1
-            #                i += 1
-            #    finally:
-            #        if num == 2:
-            #            avro_ra_match, avro_dec_match, rosat_ra_match, rosat_dec_match, match_2dsep, match_avro_candid = ztf_rosat_crossmatch(avro_ra, avro_dec, rosat_skycoord, err_pos_arcsec, avro_fname, avro_candid, ingest=False)
-            #        else:
-            #            print('possible astriod: {}'.format(avro_candid))
-            #            pass
-    
-        #stream.commit(defer=False)
-    
-            #Run Crossmatch function
-            #avro_ra_match, avro_dec_match, rosat_ra_match, rosat_dec_match, match_2dsep, match_avro_candid = ztf_rosat_crossmatch(avro_ra, avro_dec, rosat_skycoord, err_pos_arcsec, avro_fname, avro_candid, ingest=False)
-            
-    #stream.commit(defer=False)
-
-
-
-
-
 
 
 
