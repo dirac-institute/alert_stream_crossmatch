@@ -4,10 +4,7 @@
 # ZTF crossmatch with X-Ray Binaries (ROSAT catalog)
 
 import pandas as pd
-from avro.datafile import DataFileReader, DataFileWriter
-from avro.io import DatumReader, DatumWriter
 import fastavro
-import aplpy
 from astropy.coordinates import SkyCoord
 import astropy.units as u
 import glob
