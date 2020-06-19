@@ -15,12 +15,18 @@ from astropy.io import fits
 import adc.streaming as adcs
 import requests
 from astropy.io import ascii
+from .constants import UTCFormatter, LOGGING, BASE_DIR
 
 # Example command line execution:
 
 # $ python ztf_rosat_crossmatch.py --kafka_path="kafka://partnership.alerts.ztf.uw.edu/ztf_20200514_programid1" > kafka_output_20200514.txt
 
 SIGMA_TO_95pctCL = 1.95996
+
+# GROWTH marshal credentials
+secrets = ascii.read(BASE_DIR+'/secrets.csv', format='csv')
+username_marshal = secrets['marshal_user'][0]
+password_marshal = secrets['marshal_pwd'][0]
 
 def read_avro_file(fname):
     """Reads a single packet from an avro file stored with schema on disk."""
@@ -131,13 +137,11 @@ def ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx):
                     'match_sep': match_sep2d[0].to(u.arcsecond).value}
 
     if matched:
-        #logging.info
-        print(f"{ztf_source['object_id']} ({avro_skycoord.to_string('hmsdms')}) matched {match_result['match_name']} ({match_result['match_sep']:.2f} arcsec away)")
+        logging.info(f"{ztf_source['object_id']} ({avro_skycoord.to_string('hmsdms')}) matched {match_result['match_name']} ({match_result['match_sep']:.2f} arcsec away)")
         return match_result
 
     else:
-        #logging.debug
-        print(f"{ztf_source['object_id']} ({avro_skycoord.to_string('hmsdms')}) did not match (nearest source {match_result['match_name']}, {match_result['match_sep']:.2f} arcsec away")
+        logging.debug(f"{ztf_source['object_id']} ({avro_skycoord.to_string('hmsdms')}) did not match (nearest source {match_result['match_name']}, {match_result['match_sep']:.2f} arcsec away")
         return None
 
     
@@ -158,8 +162,14 @@ def get_programidx(program_name, username, password):
         return None
     
     
-def ingest_growth_marshal(programidx, candid):
-    # Using ingest_avro_id.cgi to save data to X-ray counterpart programid 14
+def ingest_growth_marshal(candid):
+    """Using ingest_avro_id.cgi to save data to X-ray counterpart programid 14
+    """
+    
+    # Get programidx
+    #programid14 = get_programidx("X-ray Counterparts", username_marshal, password_marshal)
+    programid14 = 14
+
     r = requests.post("http://skipper.caltech.edu:8080/cgi-bin/growth/ingest_avro_id.cgi",
                               auth=(username_marshal,
                                     password_marshal),
@@ -172,8 +182,9 @@ def ingest_growth_marshal(programidx, candid):
         logging.exception(e)    
     
     
-#if __name__ == '__main__':
 def main():
+
+
     
     parser = argparse.ArgumentParser()
     parser.add_argument('date', type = str, help = 'UTC date as YYMMDD')
@@ -187,25 +198,18 @@ def main():
     if args.program_id not in [1,2]:
         raise ValueError(f'Program id must be 1 or 2.  Provided {args.program_id}')
     
-    # load X-ray catalogs
-    dfx, rosat_skycoord = load_rosat()
-        
-    
-    # Read the secrets - Make a .csv and type username and password for GROWTH Marshall 
-    secrets = ascii.read('secrets.csv', format='csv')
-    
-    # GROWTH marshal credentials
-    username_marshal = secrets['marshal_user'][0]
-    password_marshal = secrets['marshal_pwd'][0]
-    
-    # Get programidx
-    #programid14 = get_programidx("X-ray Counterparts", username_marshal, password_marshal)
-    programid14 = 14
 
     kafka_topic = f"ztf_20{args.date}_programid{args.program_id}"
     kafka_path = f"kafka://partnership.alerts.ztf.uw.edu/{kafka_topic}"
-    logging.info("Connecting to Kafka topic {kafka_topic}"
 
+    LOGGING['handlers']['logfile']['filename'] = f'{BASE_DIR}/../logs/{kafka_topic}.log'
+    logging.config.dictConfig(LOGGING)
+
+    # load X-ray catalogs
+    dfx, rosat_skycoord = load_rosat()
+    
+
+    logging.info(f"Connecting to Kafka topic {kafka_topic}")
     with adcs.open(kafka_path, "r", format="avro", start_at="earliest") as stream:
         for nread, packet in enumerate(stream(progress=True, timeout=False)):#, start=1):
             ztf_source = get_candidate_info(packet)
@@ -213,8 +217,8 @@ def main():
             matched_source = ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx)
 
             if matched_source is not None:
-                if not_moving_object(avro_packet):
-                    ingest_growth_marshal(programid14, ztf_source['candid'])
+                if not_moving_object(packet):
+                    ingest_growth_marshal(ztf_source['candid'])
         
             stream.commit()
 
