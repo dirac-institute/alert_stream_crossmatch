@@ -3,6 +3,8 @@
 # June 7, 2020
 # ZTF crossmatch with X-Ray Binaries (ROSAT catalog)
 
+
+import io
 import glob
 import argparse
 import logging
@@ -12,7 +14,9 @@ import fastavro
 from astropy.coordinates import SkyCoord
 import astropy.units as u
 from astropy.io import fits
-import adc.streaming as adcs
+from aiokafka import AIOKafkaConsumer
+import asyncio
+
 import requests
 from astropy.io import ascii
 from .constants import UTCFormatter, LOGGING, BASE_DIR
@@ -31,6 +35,13 @@ password_marshal = secrets['marshal_pwd'][0]
 def read_avro_file(fname):
     """Reads a single packet from an avro file stored with schema on disk."""
     with open(fname,'rb') as f:
+        freader = fastavro.reader(f)
+        for packet in freader:
+            return packet
+
+def read_avro_bytes(buf):
+    """Reads a single packet from an avro file stored with schema on disk."""
+    with io.BytesIO(buf) as f:
         freader = fastavro.reader(f)
         for packet in freader:
             return packet
@@ -181,8 +192,8 @@ def ingest_growth_marshal(candid):
     except Exception as e:
         logging.exception(e)    
     
-    
-def main():
+ 
+def main_adc():
 
 
     
@@ -223,3 +234,57 @@ def main():
             stream.commit()
 
     stream.commit(defer=False)
+ 
+def main():
+
+
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument('date', type = str, help = 'UTC date as YYMMDD')
+    parser.add_argument('program_id', type = int, help = 'Program ID (1 or 2)')
+
+    args = parser.parse_args()
+
+    if len(args.date) != 6:
+        raise ValueError(f'Date must be specified as YYMMDD.  Provided {args.date}')
+
+    if args.program_id not in [1,2]:
+        raise ValueError(f'Program id must be 1 or 2.  Provided {args.program_id}')
+    
+
+    kafka_topic = f"ztf_20{args.date}_programid{args.program_id}"
+    kafka_server = "partnership.alerts.ztf.uw.edu:9092"
+
+    LOGGING['handlers']['logfile']['filename'] = f'{BASE_DIR}/../logs/{kafka_topic}.log'
+    logging.config.dictConfig(LOGGING)
+
+    # load X-ray catalogs
+#    dfx, rosat_skycoord = load_rosat()
+    
+
+    logging.info(f"Connecting to Kafka topic {kafka_topic}")
+
+
+    loop = asyncio.get_event_loop()
+
+    async def consume():
+        consumer = AIOKafkaConsumer(
+            kafka_topic, #other_topic,
+            loop=loop, bootstrap_servers=kafka_server,
+            auto_offset_reset="earliest",
+            value_deserializer=read_avro_bytes,
+            group_id="uw_xray")
+        # Get cluster layout and join group `my-group`
+        await consumer.start()
+        try:
+            # Consume messages
+            async for msg in consumer:
+                #print("consumed: ", msg.topic, msg.partition, msg.offset,
+                #      msg.key, msg.timestamp)
+                packet = msg.value
+                print(packet['objectId'])
+        finally:
+            # Will leave consumer group; perform autocommit if enabled.
+            await consumer.stop()
+
+    loop.run_until_complete(consume())
