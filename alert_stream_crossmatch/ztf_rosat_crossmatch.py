@@ -6,6 +6,7 @@
 
 import io
 import glob
+import time
 import argparse
 import logging
 import numpy as np
@@ -16,6 +17,8 @@ import astropy.units as u
 from astropy.io import fits
 from aiokafka import AIOKafkaConsumer
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
+import functools
 
 import requests
 from astropy.io import ascii
@@ -259,7 +262,7 @@ def main():
     logging.config.dictConfig(LOGGING)
 
     # load X-ray catalogs
-#    dfx, rosat_skycoord = load_rosat()
+    dfx, rosat_skycoord = load_rosat()
     
 
     logging.info(f"Connecting to Kafka topic {kafka_topic}")
@@ -276,15 +279,33 @@ def main():
             group_id="uw_xray")
         # Get cluster layout and join group `my-group`
         await consumer.start()
+        tstart = time.perf_counter()
+        i=0
+        nmod = 100
+        pool = ThreadPoolExecutor(max_workers=32)
         try:
             # Consume messages
             async for msg in consumer:
+                i+=1
+                if i % nmod  == 0:
+                    elapsed = time.perf_counter() - tstart
+                    print(f'Consumed {i} messages in {elapsed:.1f} sec ({i/elapsed:.1f} messages/s)')
                 #print("consumed: ", msg.topic, msg.partition, msg.offset,
                 #      msg.key, msg.timestamp)
                 packet = msg.value
-                print(packet['objectId'])
+                ztf_source = get_candidate_info(packet)
+
+                matched_source = ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx)
+                if matched_source is not None:
+                    if not_moving_object(packet):
+                        print(ztf_source['object_id'])
+                        loop.run_in_executor(pool, 
+                                functools.partial(ingest_growth_marshal,
+                                    ztf_source['candid']))
+                        #ingest_growth_marshal(ztf_source['candid'])
         finally:
             # Will leave consumer group; perform autocommit if enabled.
             await consumer.stop()
+            await pool.shutdown(wait=True)
 
     loop.run_until_complete(consume())
