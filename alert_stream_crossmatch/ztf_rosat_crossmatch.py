@@ -211,7 +211,7 @@ def main():
 
     logging.info(f"Connecting to Kafka topic {kafka_topic}")
     with adcs.open(kafka_path, "r", format="avro", start_at="earliest") as stream:
-        for nread, packet in enumerate(stream(progress=True, timeout=False)):#, start=1):
+        for nread, packet in enumerate(stream(progress=True, timeout=3600*24)):#, start=1):
             ztf_source = get_candidate_info(packet)
 
             matched_source = ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx)
