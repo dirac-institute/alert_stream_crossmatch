@@ -22,7 +22,8 @@ import functools
 
 import requests
 from astropy.io import ascii
-from .constants import UTCFormatter, LOGGING, BASE_DIR
+from astroquery.simbad import Simbad
+from .constants import UTCFormatter, LOGGING, BASE_DIR, SIMBAD_EXCLUDES
 
 # Example command line execution:
 
@@ -107,6 +108,42 @@ def not_moving_object(packet):
     return False
 
 
+customSimbad=Simbad()
+customSimbad.add_votable_fields("otype(3)")
+
+def query_simbad(ra,decl):
+    sc = SkyCoord(ra,decl,unit=u.degree)
+    result_table = customSimbad.query_region(sc, radius=2*u.arcsecond) 
+    return result_table
+
+def is_excluded_simbad_class(ztf_source):
+    """Is the object in Simbad, with object types we reject (e.g., AGN)?
+    """
+    try:
+        result_table = query_simbad(ztf_source['ra'],ztf_source['dec'])
+        if result_table is None:
+            logging.info(f"{ztf_source['object_id']} not found in Simbad") 
+            return False # not in Simbad
+        else:
+            # for now let's just take the closest match
+            otype = result_table['OTYPE_3'][0].decode("utf-8")
+            simbad_id = result_table['MAIN_ID'][0].decode("utf-8")
+            if otype in SIMBAD_EXCLUDES:
+                logging.info(f"{ztf_source['object_id']} found in Simbad as {simbad_id} ({otype}); omitting")
+                return True
+            else:
+                logging.info(f"{ztf_source['object_id']} found in Simbad as {simbad_id} ({otype}); saving")
+                return False
+
+    except Exception as e:
+        # if this doesn't work, record the exception and continue
+        logging.exception(f"Error querying Simbad for {ztf_source['object_id']}",e)
+        return False
+
+
+
+
+
 
 
 def ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx):
@@ -151,7 +188,7 @@ def ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx):
                     'match_sep': match_sep2d[0].to(u.arcsecond).value}
 
     if matched:
-        logging.info(f"{ztf_source['object_id']} ({avro_skycoord.to_string('hmsdms')}) matched {match_result['match_name']} ({match_result['match_sep']:.2f} arcsec away)")
+        logging.info(f"{ztf_source['object_id']} ({avro_skycoord.to_string('hmsdms')}; {ztf_source['candid']}) matched {match_result['match_name']} ({match_result['match_sep']:.2f} arcsec away)")
         return match_result
 
     else:
@@ -237,6 +274,16 @@ def main_adc():
             stream.commit()
 
     stream.commit(defer=False)
+
+def process_packet(packet, rosat_skycoord, dfx):
+                                    
+    ztf_source = get_candidate_info(packet)
+
+    matched_source = ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx)
+    if matched_source is not None:
+        if not_moving_object(packet):
+            if not is_excluded_simbad_class(ztf_source):
+                ingest_growth_marshal(ztf_source['candid'])
  
 def main():
 
@@ -290,22 +337,19 @@ def main():
                 if i % nmod  == 0:
                     elapsed = time.perf_counter() - tstart
                     print(f'Consumed {i} messages in {elapsed:.1f} sec ({i/elapsed:.1f} messages/s)')
+
                 #print("consumed: ", msg.topic, msg.partition, msg.offset,
                 #      msg.key, msg.timestamp)
+                
                 packet = msg.value
-                ztf_source = get_candidate_info(packet)
 
-                matched_source = ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx)
-                if matched_source is not None:
-                    if not_moving_object(packet):
-                        print(ztf_source['object_id'])
-                        loop.run_in_executor(pool, 
-                                functools.partial(ingest_growth_marshal,
-                                    ztf_source['candid']))
-                        #ingest_growth_marshal(ztf_source['candid'])
+                loop.run_in_executor(pool, 
+                        functools.partial(process_packet, 
+                            packet, rosat_skycoord, dfx))
+
         finally:
             # Will leave consumer group; perform autocommit if enabled.
             await consumer.stop()
-            await pool.shutdown(wait=True)
+            pool.shutdown(wait=True)
 
     loop.run_until_complete(consume())
