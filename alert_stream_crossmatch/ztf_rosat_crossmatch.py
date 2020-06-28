@@ -358,7 +358,8 @@ def main():
                         with lock_packets_to_simbad:
                             packets_to_simbad = deepcopy(packets_from_kafka)
                             packets_from_kafka=[]
-                    loop.run_in_executor(pool, 
+                    if len(packets_to_simbad) > 0:
+                        loop.run_in_executor(pool, 
                             functools.partial(check_simbad_and_save,
                                 packets_to_simbad, 
                                 lock_packets_to_simbad))
