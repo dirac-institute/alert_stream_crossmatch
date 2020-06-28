@@ -9,10 +9,12 @@ import glob
 import time
 import argparse
 import logging
+from threading import Lock
+from copy import deepcopy
 import numpy as np
 import pandas as pd
 import fastavro
-from astropy.coordinates import SkyCoord
+from astropy.coordinates import SkyCoord, match_coordinates_sky
 import astropy.units as u
 from astropy.io import fits
 from aiokafka import AIOKafkaConsumer
@@ -110,9 +112,10 @@ def not_moving_object(packet):
 
 customSimbad=Simbad()
 customSimbad.add_votable_fields("otype(3)")
+customSimbad.add_votable_fields("otypes(3)") # returns a '|' separated list of all the otypes
 
-def query_simbad(ra,decl):
-    sc = SkyCoord(ra,decl,unit=u.degree)
+def query_simbad(ra,dec):
+    sc = SkyCoord(ra,dec,unit=u.degree)
     result_table = customSimbad.query_region(sc, radius=2*u.arcsecond) 
     return result_table
 
@@ -139,10 +142,6 @@ def is_excluded_simbad_class(ztf_source):
         # if this doesn't work, record the exception and continue
         logging.exception(f"Error querying Simbad for {ztf_source['object_id']}",e)
         return False
-
-
-
-
 
 
 
@@ -232,59 +231,68 @@ def ingest_growth_marshal(candid):
     except Exception as e:
         logging.exception(e)    
     
- 
-def main_adc():
 
-
-    
-    parser = argparse.ArgumentParser()
-    parser.add_argument('date', type = str, help = 'UTC date as YYMMDD')
-    parser.add_argument('program_id', type = int, help = 'Program ID (1 or 2)')
-
-    args = parser.parse_args()
-
-    if len(args.date) != 6:
-        raise ValueError(f'Date must be specified as YYMMDD.  Provided {args.date}')
-
-    if args.program_id not in [1,2]:
-        raise ValueError(f'Program id must be 1 or 2.  Provided {args.program_id}')
-    
-
-    kafka_topic = f"ztf_20{args.date}_programid{args.program_id}"
-    kafka_path = f"kafka://partnership.alerts.ztf.uw.edu/{kafka_topic}"
-
-    LOGGING['handlers']['logfile']['filename'] = f'{BASE_DIR}/../logs/{kafka_topic}.log'
-    logging.config.dictConfig(LOGGING)
-
-    # load X-ray catalogs
-    dfx, rosat_skycoord = load_rosat()
-    
-
-    logging.info(f"Connecting to Kafka topic {kafka_topic}")
-    with adcs.open(kafka_path, "r", format="avro", start_at="earliest") as stream:
-        for nread, packet in enumerate(stream(progress=True, timeout=3600*24)):#, start=1):
-            ztf_source = get_candidate_info(packet)
-
-            matched_source = ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx)
-
-            if matched_source is not None:
-                if not_moving_object(packet):
-                    ingest_growth_marshal(ztf_source['candid'])
-        
-            stream.commit()
-
-    stream.commit(defer=False)
-
-def process_packet(packet, rosat_skycoord, dfx):
+def process_packet(packet, rosat_skycoord, dfx, saved_packets, lock):
                                     
     ztf_source = get_candidate_info(packet)
 
     matched_source = ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx)
     if matched_source is not None:
         if not_moving_object(packet):
-            if not is_excluded_simbad_class(ztf_source):
-                ingest_growth_marshal(ztf_source['candid'])
- 
+            with lock:
+                saved_packets.append(packet)
+            #if not is_excluded_simbad_class(ztf_source):
+            #    ingest_growth_marshal(ztf_source['candid'])
+
+
+def check_simbad_and_save(packets_to_simbad, lock_packets_to_simbad):
+    with lock_packets_to_simbad:
+        logging.info(f'{len(packets_to_simbad)} being sent to Simbad for matching')
+        ras = []
+        decs = []
+        for packet in packets_to_simbad:
+            ras.append(packet['candidate']['ra'])
+            decs.append(packet['candidate']['dec'])
+
+        sc = SkyCoord(ras, decs, unit=u.degree)
+
+        MATCH_RADIUS = 2*u.arcsecond 
+        try:
+            result_table = customSimbad.query_region(sc, radius=MATCH_RADIUS)
+        except Exception as e:
+            logging.exception("Error querying Simbad",e)
+
+        # annoyingly, the result table is unsorted and unlabeled, so we have
+        # to re-match it to our packets
+        
+        sc_simbad = SkyCoord(result_table['RA'], result_table['DEC'], 
+                unit=('hourangle','degree'))
+
+        idx, sep2d, _ = match_coordinates_sky(sc, sc_simbad)
+        assert( len(sc) == len(idx))
+        
+        for i, packet in enumerate(packets_to_simbad):
+            # check if we have a simbad match for each packet we sent
+            if sep2d[i] <= MATCH_RADIUS:
+                matched_row = result_table[idx[i]]
+                otype = matched_row['OTYPE_3'].decode("utf-8")
+                simbad_id = matched_row['MAIN_ID'].decode("utf-8")
+                if otype in SIMBAD_EXCLUDES:
+                    logging.info(f"{packet['objectId']} found in Simbad as {simbad_id} ({otype}); omitting")
+                else:
+                    logging.info(f"{packet['objectId']} found in Simbad as {simbad_id} ({otype}); saving")
+                    ingest_growth_marshal(packet['candid'])
+            else:
+                # no match in simbad
+                logging.info(f"{packet['objectId']} not found in Simbad") 
+                ingest_growth_marshal(packet['candid'])
+
+
+
+
+
+
+
 def main():
 
 
@@ -327,16 +335,34 @@ def main():
         # Get cluster layout and join group `my-group`
         await consumer.start()
         tstart = time.perf_counter()
+        tbatch = tstart
         i=0
-        nmod = 100
+        nmod = 1000
         pool = ThreadPoolExecutor(max_workers=32)
+        packets_from_kafka = []
+        packets_to_simbad = []
+        lock_packets_from_kafka = Lock()
+        lock_packets_to_simbad = Lock()
         try:
             # Consume messages
             async for msg in consumer:
                 i+=1
                 if i % nmod  == 0:
                     elapsed = time.perf_counter() - tstart
-                    print(f'Consumed {i} messages in {elapsed:.1f} sec ({i/elapsed:.1f} messages/s)')
+                    logging.info(f'Consumed {i} messages in {elapsed:.1f} sec ({i/elapsed:.1f} messages/s)')
+
+
+                # query simbad in batches
+                if time.perf_counter() - tbatch >= 40:
+                    with lock_packets_from_kafka:
+                        with lock_packets_to_simbad:
+                            packets_to_simbad = deepcopy(packets_from_kafka)
+                            packets_from_kafka=[]
+                    loop.run_in_executor(pool, 
+                            functools.partial(check_simbad_and_save,
+                                packets_to_simbad, 
+                                lock_packets_to_simbad))
+                    tbatch = time.perf_counter()
 
                 #print("consumed: ", msg.topic, msg.partition, msg.offset,
                 #      msg.key, msg.timestamp)
@@ -345,11 +371,13 @@ def main():
 
                 loop.run_in_executor(pool, 
                         functools.partial(process_packet, 
-                            packet, rosat_skycoord, dfx))
+                            packet, rosat_skycoord, dfx, packets_from_kafka, 
+                            lock_packets_from_kafka))
 
         finally:
             # Will leave consumer group; perform autocommit if enabled.
             await consumer.stop()
             pool.shutdown(wait=True)
+            # TODO: flush out saved packets
 
     loop.run_until_complete(consume())
