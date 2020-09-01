@@ -66,6 +66,7 @@ def load_rosat():
     # Make ROSAT data into a pandas dataframe
     rosat_data = rosat_fits[1].data
     dfx = pd.DataFrame(rosat_data)
+    rosat_fits.close()
     
     # exclude sources that are not observable
     dfx = dfx[dfx.DEC_DEG >= -30] 
@@ -338,7 +339,7 @@ def main():
         tbatch = tstart
         i=0
         nmod = 1000
-        pool = ThreadPoolExecutor(max_workers=32)
+        pool = ThreadPoolExecutor(max_workers=64)
         packets_from_kafka = []
         packets_to_simbad = []
         lock_packets_from_kafka = Lock()
