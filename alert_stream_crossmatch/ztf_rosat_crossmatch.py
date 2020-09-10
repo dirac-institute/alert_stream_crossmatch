@@ -34,9 +34,10 @@ from .constants import UTCFormatter, LOGGING, BASE_DIR, SIMBAD_EXCLUDES
 SIGMA_TO_95pctCL = 1.95996
 
 # GROWTH marshal credentials
-secrets = ascii.read(BASE_DIR+'/secrets.csv', format='csv')
-username_marshal = secrets['marshal_user'][0]
-password_marshal = secrets['marshal_pwd'][0]
+# secrets = ascii.read(BASE_DIR+'/secrets.csv', format='csv')
+username_marshal = None # secrets['marshal_user'][0]
+password_marshal = None # secrets['marshal_pwd'][0]
+
 
 def read_avro_file(fname):
     """Reads a single packet from an avro file stored with schema on disk."""
