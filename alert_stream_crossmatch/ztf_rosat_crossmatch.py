@@ -57,26 +57,26 @@ def get_candidate_info(packet):
 
     return {'ra': packet['candidate']['ra'], 'dec': packet['candidate']['dec'],
             'object_id': packet['objectId'], 'candid': packet['candid']}
-                    
-    
 
-def load_rosat():    
+
+
+def load_rosat():
     # Open ROSAT catalog
     rosat_fits = fits.open('/epyc/data/rosat_2rxs/cat2rxs.fits')
-    
+
     # Make ROSAT data into a pandas dataframe
     rosat_data = rosat_fits[1].data
     dfx = pd.DataFrame(rosat_data)
     rosat_fits.close()
-    
+
     # exclude sources that are not observable
-    dfx = dfx[dfx.DEC_DEG >= -30] 
-    
-    # List ROSAT error position [arcsec] 
-    dfx['err_pos_arcsec'] = np.sqrt(((dfx.XERR*45)**2.+ (dfx.YERR*45)**2.) + 0.6**2.) * SIGMA_TO_95pctCL 
-    
+    dfx = dfx[dfx.DEC_DEG >= -30]
+
+    # List ROSAT error position [arcsec]
+    dfx['err_pos_arcsec'] = np.sqrt(((dfx.XERR*45)**2.+ (dfx.YERR*45)**2.) + 0.6**2.) * SIGMA_TO_95pctCL
+
     # Put ROSAT ra and dec list in SkyCoord [degrees]
-    rosat_skycoord = SkyCoord(ra=dfx.RA_DEG, dec=dfx.DEC_DEG, 
+    rosat_skycoord = SkyCoord(ra=dfx.RA_DEG, dec=dfx.DEC_DEG,
             frame='icrs', unit=(u.deg))
 
     return dfx[['IAU_NAME','RA_DEG','DEC_DEG','err_pos_arcsec']], rosat_skycoord
@@ -84,16 +84,16 @@ def load_rosat():
 
 def not_moving_object(packet):
     """Check if there are > 2 detections separated by at least 30 minutes.
-    
+
     Parameters:
        avro_packet: dictionary
           Extracted data from the avro file
-                
+
     Return:
         real: boolean
             True if there is another detection > 30 minutes from the triggering detection
-    """    
-    
+    """
+
     date0 = float(packet['candidate']['jd'])
     if len(packet['prv_candidates']) == 0:
         logging.debug("No previous detections of {packet['objectId']}")
@@ -118,7 +118,7 @@ customSimbad.add_votable_fields("otypes(3)") # returns a '|' separated list of a
 
 def query_simbad(ra,dec):
     sc = SkyCoord(ra,dec,unit=u.degree)
-    result_table = customSimbad.query_region(sc, radius=2*u.arcsecond) 
+    result_table = customSimbad.query_region(sc, radius=2*u.arcsecond)
     return result_table
 
 def is_excluded_simbad_class(ztf_source):
@@ -127,7 +127,7 @@ def is_excluded_simbad_class(ztf_source):
     try:
         result_table = query_simbad(ztf_source['ra'],ztf_source['dec'])
         if result_table is None:
-            logging.info(f"{ztf_source['object_id']} not found in Simbad") 
+            logging.info(f"{ztf_source['object_id']} not found in Simbad")
             return False # not in Simbad
         else:
             # for now let's just take the closest match
@@ -150,18 +150,18 @@ def is_excluded_simbad_class(ztf_source):
 def ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx):
     """
     Cross match ZTF and ROSAT data using astropy.coordinates.SkyCoord
-    
+
     Parameters:
                 ztf_source: dict
                     {'ra': float (degrees), 'dec': float (degrees),
                     'object_id': string, 'candid': int}
-                    
+
                 rosat_skycoord: astropy.coordinates.SkyCoord
                     ROSAT catalog in astropy.coordinates.SkyCoord
-                    
+
                 dfx: pandas.DataFrame
                     slim ROSAT catalog
-                
+
     Return:
             matched_source: dict or None
                 if a source matches, return
@@ -169,20 +169,20 @@ def ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx):
                     'source_name': string, 'sep2d': float (arcsec)}
                 else None
     """
-    
+
 
     # Input avro data ra and dec in SkyCoords
-    avro_skycoord = SkyCoord(ra=ztf_source['ra'], dec=ztf_source['dec'], 
+    avro_skycoord = SkyCoord(ra=ztf_source['ra'], dec=ztf_source['dec'],
             frame='icrs', unit=(u.deg))
-    
+
     # Finds the nearest ROSAT source's coordinates to the avro files ra[deg] and dec[deg]
-    match_idx, match_sep2d, _ = avro_skycoord.match_to_catalog_sky(rosat_skycoord) 
-    
+    match_idx, match_sep2d, _ = avro_skycoord.match_to_catalog_sky(rosat_skycoord)
+
     match_row = dfx.iloc[match_idx]
 
     matched = match_sep2d[0] <= match_row['err_pos_arcsec'] * u.arcsecond
 
-    match_result = {'match_name': match_row['IAU_NAME'], 
+    match_result = {'match_name': match_row['IAU_NAME'],
                     'match_ra': match_row['RA_DEG'],
                     'match_dec': match_row['DEC_DEG'],
                     'match_err_pos': match_row['err_pos_arcsec'],
@@ -196,8 +196,8 @@ def ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx):
         logging.debug(f"{ztf_source['object_id']} ({avro_skycoord.to_string('hmsdms')}) did not match (nearest source {match_result['match_name']}, {match_result['match_sep']:.2f} arcsec away")
         return None
 
-    
-    
+
+
 def get_programidx(program_name, username, password):
     '''Given a marshal science program name, it returns its programidx'''
 
@@ -212,12 +212,12 @@ def get_programidx(program_name, username, password):
         print(f'The user {username} does not have access to the program \
               {program_name}')
         return None
-    
-    
+
+
 def ingest_growth_marshal(candid):
     """Using ingest_avro_id.cgi to save data to X-ray counterpart programid 14
     """
-    
+
     # Get programidx
     #programid14 = get_programidx("X-ray Counterparts", username_marshal, password_marshal)
     programid14 = 14
@@ -231,11 +231,11 @@ def ingest_growth_marshal(candid):
         r.raise_for_status()
         logging.info(f'Successfully ingested {candid}')
     except Exception as e:
-        logging.exception(e)    
-    
+        logging.exception(e)
+
 
 def process_packet(packet, rosat_skycoord, dfx, saved_packets, lock):
-                                    
+
     ztf_source = get_candidate_info(packet)
 
     matched_source = ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx)
@@ -247,7 +247,7 @@ def process_packet(packet, rosat_skycoord, dfx, saved_packets, lock):
             #    ingest_growth_marshal(ztf_source['candid'])
 
 
-def check_simbad_and_save(packets_to_simbad, lock_packets_to_simbad):
+def check_simbad_and_save(packets_to_simbad, lock_packets_to_simbad, ingest_GM):
     with lock_packets_to_simbad:
         logging.info(f'{len(packets_to_simbad)} being sent to Simbad for matching')
         ras = []
@@ -258,7 +258,7 @@ def check_simbad_and_save(packets_to_simbad, lock_packets_to_simbad):
 
         sc = SkyCoord(ras, decs, unit=u.degree)
 
-        MATCH_RADIUS = 2*u.arcsecond 
+        MATCH_RADIUS = 2*u.arcsecond
         try:
             result_table = customSimbad.query_region(sc, radius=MATCH_RADIUS)
         except Exception as e:
@@ -266,13 +266,13 @@ def check_simbad_and_save(packets_to_simbad, lock_packets_to_simbad):
 
         # annoyingly, the result table is unsorted and unlabeled, so we have
         # to re-match it to our packets
-        
-        sc_simbad = SkyCoord(result_table['RA'], result_table['DEC'], 
+
+        sc_simbad = SkyCoord(result_table['RA'], result_table['DEC'],
                 unit=('hourangle','degree'))
 
         idx, sep2d, _ = match_coordinates_sky(sc, sc_simbad)
         assert( len(sc) == len(idx))
-        
+
         for i, packet in enumerate(packets_to_simbad):
             # check if we have a simbad match for each packet we sent
             if sep2d[i] <= MATCH_RADIUS:
@@ -283,11 +283,13 @@ def check_simbad_and_save(packets_to_simbad, lock_packets_to_simbad):
                     logging.info(f"{packet['objectId']} found in Simbad as {simbad_id} ({otype}); omitting")
                 else:
                     logging.info(f"{packet['objectId']} found in Simbad as {simbad_id} ({otype}); saving")
-                    ingest_growth_marshal(packet['candid'])
+                    if ingest_GM:
+                        ingest_growth_marshal(packet['candid'])
             else:
                 # no match in simbad
-                logging.info(f"{packet['objectId']} not found in Simbad") 
-                ingest_growth_marshal(packet['candid'])
+                logging.info(f"{packet['objectId']} not found in Simbad")
+                if ingest_GM:
+                    ingest_growth_marshal(packet['candid'])
 
 
 
@@ -298,10 +300,12 @@ def check_simbad_and_save(packets_to_simbad, lock_packets_to_simbad):
 def main():
 
 
-    
+
     parser = argparse.ArgumentParser()
     parser.add_argument('date', type = str, help = 'UTC date as YYMMDD')
     parser.add_argument('program_id', type = int, help = 'Program ID (1 or 2)')
+    parser.add_argument('ingest_growth_marshal', type = bool,
+                        help = 'Save data to X-ray Counterparts (True/False)')
 
     args = parser.parse_args()
 
@@ -310,7 +314,9 @@ def main():
 
     if args.program_id not in [1,2]:
         raise ValueError(f'Program id must be 1 or 2.  Provided {args.program_id}')
-    
+
+    if not isinstance(args.ingest_growth_marshal, bool):
+        raise ValueError(f'Ingest growth marshal indicator must be True or False.  Provided {args.ingest_growth_marshal}')
 
     kafka_topic = f"ztf_20{args.date}_programid{args.program_id}"
     kafka_server = "partnership.alerts.ztf.uw.edu:9092"
@@ -320,7 +326,7 @@ def main():
 
     # load X-ray catalogs
     dfx, rosat_skycoord = load_rosat()
-    
+
 
     logging.info(f"Connecting to Kafka topic {kafka_topic}")
 
@@ -361,20 +367,21 @@ def main():
                             packets_to_simbad = deepcopy(packets_from_kafka)
                             packets_from_kafka=[]
                     if len(packets_to_simbad) > 0:
-                        loop.run_in_executor(pool, 
+                        loop.run_in_executor(pool,
                             functools.partial(check_simbad_and_save,
-                                packets_to_simbad, 
-                                lock_packets_to_simbad))
+                                packets_to_simbad,
+                                lock_packets_to_simbad,
+                                args.ingest_growth_marshal))
                     tbatch = time.perf_counter()
 
                 #print("consumed: ", msg.topic, msg.partition, msg.offset,
                 #      msg.key, msg.timestamp)
-                
+
                 packet = msg.value
 
-                loop.run_in_executor(pool, 
-                        functools.partial(process_packet, 
-                            packet, rosat_skycoord, dfx, packets_from_kafka, 
+                loop.run_in_executor(pool,
+                        functools.partial(process_packet,
+                            packet, rosat_skycoord, dfx, packets_from_kafka,
                             lock_packets_from_kafka))
 
         finally:
