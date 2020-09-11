@@ -34,9 +34,9 @@ from .constants import UTCFormatter, LOGGING, BASE_DIR, SIMBAD_EXCLUDES
 SIGMA_TO_95pctCL = 1.95996
 
 # GROWTH marshal credentials
-# secrets = ascii.read(BASE_DIR+'/secrets.csv', format='csv')
-username_marshal = None # secrets['marshal_user'][0]
-password_marshal = None # secrets['marshal_pwd'][0]
+secrets = ascii.read(BASE_DIR+'secrets.csv', format='csv')
+username_marshal = secrets['marshal_user'][0]
+password_marshal = secrets['marshal_pwd'][0]
 
 
 def read_avro_file(fname):
@@ -170,11 +170,11 @@ def ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx):
                 else None
     """
 
-
     # Input avro data ra and dec in SkyCoords
     avro_skycoord = SkyCoord(ra=ztf_source['ra'], dec=ztf_source['dec'],
             frame='icrs', unit=(u.deg))
 
+    # Input avro data ra and dec in SkyCoords
     # Finds the nearest ROSAT source's coordinates to the avro files ra[deg] and dec[deg]
     match_idx, match_sep2d, _ = avro_skycoord.match_to_catalog_sky(rosat_skycoord)
 
@@ -221,7 +221,7 @@ def ingest_growth_marshal(candid):
     # Get programidx
     #programid14 = get_programidx("X-ray Counterparts", username_marshal, password_marshal)
     programid14 = 14
-
+    logging.debug(f"ingesting {candid} to the growth marshal")
     r = requests.post("http://skipper.caltech.edu:8080/cgi-bin/growth/ingest_avro_id.cgi",
                               auth=(username_marshal,
                                     password_marshal),
@@ -235,13 +235,14 @@ def ingest_growth_marshal(candid):
 
 
 def process_packet(packet, rosat_skycoord, dfx, saved_packets, lock):
-
+    
     ztf_source = get_candidate_info(packet)
 
     matched_source = ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx)
     if matched_source is not None:
         if not_moving_object(packet):
             with lock:
+                logging.debug('adding packet to packets_from_kafka')
                 saved_packets.append(packet)
             #if not is_excluded_simbad_class(ztf_source):
             #    ingest_growth_marshal(ztf_source['candid'])
@@ -292,9 +293,15 @@ def check_simbad_and_save(packets_to_simbad, lock_packets_to_simbad, ingest_GM):
                     ingest_growth_marshal(packet['candid'])
 
 
-
-
-
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    if v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected')
 
 
 def main():
@@ -304,8 +311,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('date', type = str, help = 'UTC date as YYMMDD')
     parser.add_argument('program_id', type = int, help = 'Program ID (1 or 2)')
-    parser.add_argument('ingest_growth_marshal', type = bool,
-                        help = 'Save data to X-ray Counterparts (True/False)')
+    parser.add_argument('--ingest_growth_marshal', type = str2bool, default = False, nargs = '?',
+                        const = True, help = 'Save data to X-ray Counterparts (True/False)')
 
     args = parser.parse_args()
 
@@ -317,12 +324,14 @@ def main():
 
     if not isinstance(args.ingest_growth_marshal, bool):
         raise ValueError(f'Ingest growth marshal indicator must be True or False.  Provided {args.ingest_growth_marshal}')
-
+    
     kafka_topic = f"ztf_20{args.date}_programid{args.program_id}"
     kafka_server = "partnership.alerts.ztf.uw.edu:9092"
 
     LOGGING['handlers']['logfile']['filename'] = f'{BASE_DIR}/../logs/{kafka_topic}.log'
     logging.config.dictConfig(LOGGING)
+
+    logging.debug(f"Args parsed and validated: {args.date}, {args.program_id}, {args.ingest_growth_marshal}")    
 
     # load X-ray catalogs
     dfx, rosat_skycoord = load_rosat()
@@ -345,12 +354,13 @@ def main():
         tstart = time.perf_counter()
         tbatch = tstart
         i=0
-        nmod = 1000
+        nmod = 100
         pool = ThreadPoolExecutor(max_workers=64)
         packets_from_kafka = []
         packets_to_simbad = []
         lock_packets_from_kafka = Lock()
         lock_packets_to_simbad = Lock()
+        logging.debug('begin ingesting messages')
         try:
             # Consume messages
             async for msg in consumer:
@@ -364,9 +374,11 @@ def main():
                 if time.perf_counter() - tbatch >= 40:
                     with lock_packets_from_kafka:
                         with lock_packets_to_simbad:
+                            logging.debug('copying {} packets from kafka to simbad'.format(len(packets_from_kafka)))
                             packets_to_simbad = deepcopy(packets_from_kafka)
                             packets_from_kafka=[]
                     if len(packets_to_simbad) > 0:
+                        logging.debug(f'{len(packets_to_simbad)} packets to query')
                         loop.run_in_executor(pool,
                             functools.partial(check_simbad_and_save,
                                 packets_to_simbad,
