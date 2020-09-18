@@ -169,31 +169,33 @@ def ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx):
                 else None
     """
     
+    try:
+        # Input avro data ra and dec in SkyCoords
+        avro_skycoord = SkyCoord(ra=ztf_source['ra'], dec=ztf_source['dec'],
+                frame='icrs', unit=(u.deg))
 
-    # Input avro data ra and dec in SkyCoords
-    avro_skycoord = SkyCoord(ra=ztf_source['ra'], dec=ztf_source['dec'], 
-            frame='icrs', unit=(u.deg))
-    
-    # Finds the nearest ROSAT source's coordinates to the avro files ra[deg] and dec[deg]
-    match_idx, match_sep2d, _ = avro_skycoord.match_to_catalog_sky(rosat_skycoord) 
-    
-    match_row = dfx.iloc[match_idx]
+        # Finds the nearest ROSAT source's coordinates to the avro files ra[deg] and dec[deg]
+        match_idx, match_sep2d, _ = avro_skycoord.match_to_catalog_sky(rosat_skycoord)
 
-    matched = match_sep2d[0] <= match_row['err_pos_arcsec'] * u.arcsecond
+        match_row = dfx.iloc[match_idx]
 
-    match_result = {'match_name': match_row['IAU_NAME'], 
-                    'match_ra': match_row['RA_DEG'],
-                    'match_dec': match_row['DEC_DEG'],
-                    'match_err_pos': match_row['err_pos_arcsec'],
-                    'match_sep': match_sep2d[0].to(u.arcsecond).value}
+        matched = match_sep2d[0] <= match_row['err_pos_arcsec'] * u.arcsecond
 
-    if matched:
-        logging.info(f"{ztf_source['object_id']} ({avro_skycoord.to_string('hmsdms')}; {ztf_source['candid']}) matched {match_result['match_name']} ({match_result['match_sep']:.2f} arcsec away)")
-        return match_result
+        match_result = {'match_name': match_row['IAU_NAME'],
+                        'match_ra': match_row['RA_DEG'],
+                        'match_dec': match_row['DEC_DEG'],
+                        'match_err_pos': match_row['err_pos_arcsec'],
+                        'match_sep': match_sep2d[0].to(u.arcsecond).value}
 
-    else:
-        logging.debug(f"{ztf_source['object_id']} ({avro_skycoord.to_string('hmsdms')}) did not match (nearest source {match_result['match_name']}, {match_result['match_sep']:.2f} arcsec away")
-        return None
+        if matched:
+            logging.info(f"{ztf_source['object_id']} ({avro_skycoord.to_string('hmsdms')}; {ztf_source['candid']}) matched {match_result['match_name']} ({match_result['match_sep']:.2f} arcsec away)")
+            return match_result
+
+        else:
+            logging.debug(f"{ztf_source['object_id']} ({avro_skycoord.to_string('hmsdms')}) did not match (nearest source {match_result['match_name']}, {match_result['match_sep']:.2f} arcsec away")
+            return None
+    except:
+        logging.exception(f"Unable to crossmatch {ztf_source['object_id']} with ROSAT", e)
 
     
     
