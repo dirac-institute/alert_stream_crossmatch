@@ -33,6 +33,18 @@ def create_table(conn, create_table_sql):
 def cache_ZTF_object(conn, ztf_object):
     """
     Add ZTF object to database.
+
+    Parameters
+    ----------
+    conn: sqlite3.Connection object
+        The connection to the database
+    ztf_object: list or str
+        Data to insert into the database in the follwoing form: (ZTF_object_id,SIMBAD_otype,ra,dec,ROSAT_IAU_NAME)
+
+    Returns
+    -------
+    cur.lastrowid: int
+        Id of the last row inserted into the database
     """
 
     sql = ''' INSERT INTO ZTF_objects(ZTF_object_id,SIMBAD_otype,ra,dec,ROSAT_IAU_NAME)
@@ -43,6 +55,20 @@ def cache_ZTF_object(conn, ztf_object):
     return cur.lastrowid
 
 def select_ZTF_objects(conn, ztf_object_ids):
+    """
+    Select rows from database with id(s) in ztf_object_ids.
+
+    Parameters
+    ----------
+    conn: sqlite3.Connection object
+        The connection to the database
+    ztf_object_ids: str or tuple of strs
+        The ztf_object_ids to select from the database
+
+    Returns
+    df: pandas DataFrame
+        Rows in the database corresponding to ztf_object_ids
+    """
     cur = conn.cursor()
     if isinstance(ztf_object_ids, str):
         try:

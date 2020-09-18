@@ -26,6 +26,7 @@ import requests
 from astropy.io import ascii
 from astroquery.simbad import Simbad
 from .constants import UTCFormatter, LOGGING, BASE_DIR, SIMBAD_EXCLUDES
+from .db_caching import create_connection, cache_ZTF_object, select_ZTF_objects
 
 # Example command line execution:
 
@@ -38,6 +39,9 @@ secrets = ascii.read(BASE_DIR+'secrets.csv', format='csv')
 username_marshal = secrets['marshal_user'][0]
 password_marshal = secrets['marshal_pwd'][0]
 
+# Database of matches
+database = DB_DIR + 'test_sqlite.db'
+conn = create_connection(database)
 
 def read_avro_file(fname):
     """Reads a single packet from an avro file stored with schema on disk."""
@@ -190,6 +194,7 @@ def ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx):
 
     if matched:
         logging.info(f"{ztf_source['object_id']} ({avro_skycoord.to_string('hmsdms')}; {ztf_source['candid']}) matched {match_result['match_name']} ({match_result['match_sep']:.2f} arcsec away)")
+
         return match_result
 
     else:
@@ -234,6 +239,31 @@ def ingest_growth_marshal(candid):
         logging.exception(e)
 
 
+def save_to_db(packet, otype):
+    """Save matches to database
+    """
+    ztf_object_id = packet['candid']
+    simbad_otype = otype
+    ra = packet['candidate']['ra']
+    dec = packet['candidate']['dec']
+    rosat_iau_name = packet['match']['match_name']
+    logging.debug(f"Saving new source {ztf_object_id} to database.")
+    try:
+        cache_ZTF_object(conn, (ztf_object_id, simbad_otype, ra, dec, rosat_iau_name))
+        logging.debug(f"Successfully saved new source {ztf_object_id} to database.")
+    except Exception as e:
+        logging.exception(e)
+
+
+def check_for_new_sources(packets_to_simbad):
+    """Checks the packets_to_simbad for ZTF objects not previously saved to the database.
+    """
+    sources = (packet['candid'] for packet in packets_to_simbad)
+    old_sources = select_ZTF_objects(conn, sources)
+    new_packets = [packet for packet in packets_to_simbad if packet['candid'] not in old_sources]
+    return new_packets
+
+
 def process_packet(packet, rosat_skycoord, dfx, saved_packets, lock):
     
     ztf_source = get_candidate_info(packet)
@@ -243,17 +273,25 @@ def process_packet(packet, rosat_skycoord, dfx, saved_packets, lock):
         if not_moving_object(packet):
             with lock:
                 logging.debug('adding packet to packets_from_kafka')
+                packet['match'] = matched_source  # TODO figure out how to assemble ROSAT + simbad data
                 saved_packets.append(packet)
-            #if not is_excluded_simbad_class(ztf_source):
+            # if not is_excluded_simbad_class(ztf_source):
             #    ingest_growth_marshal(ztf_source['candid'])
 
 
 def check_simbad_and_save(packets_to_simbad, lock_packets_to_simbad, ingest_GM):
     with lock_packets_to_simbad:
-        logging.info(f'{len(packets_to_simbad)} being sent to Simbad for matching')
+        new_packets_to_simbad = check_for_new_sources(packets_to_simbad)
+
+        # Return if sources were previously seen and recorded
+        if len(new_packets_to_simbad) == 0:
+            logging.debug(f"All {len(packets_to_simbad)} were previously seen.")
+            return
+
+        logging.info(f'{len(new_packets_to_simbad)} being sent to Simbad for matching')
         ras = []
         decs = []
-        for packet in packets_to_simbad:
+        for packet in new_packets_to_simbad:
             ras.append(packet['candidate']['ra'])
             decs.append(packet['candidate']['dec'])
 
@@ -272,9 +310,9 @@ def check_simbad_and_save(packets_to_simbad, lock_packets_to_simbad, ingest_GM):
                 unit=('hourangle','degree'))
 
         idx, sep2d, _ = match_coordinates_sky(sc, sc_simbad)
-        assert( len(sc) == len(idx))
+        assert(len(sc) == len(idx))
 
-        for i, packet in enumerate(packets_to_simbad):
+        for i, packet in enumerate(new_packets_to_simbad):
             # check if we have a simbad match for each packet we sent
             if sep2d[i] <= MATCH_RADIUS:
                 matched_row = result_table[idx[i]]
@@ -284,11 +322,13 @@ def check_simbad_and_save(packets_to_simbad, lock_packets_to_simbad, ingest_GM):
                     logging.info(f"{packet['objectId']} found in Simbad as {simbad_id} ({otype}); omitting")
                 else:
                     logging.info(f"{packet['objectId']} found in Simbad as {simbad_id} ({otype}); saving")
+                    save_to_db(packet, otype)
                     if ingest_GM:
                         ingest_growth_marshal(packet['candid'])
             else:
                 # no match in simbad
                 logging.info(f"{packet['objectId']} not found in Simbad")
+                save_to_db(packet, None)
                 if ingest_GM:
                     ingest_growth_marshal(packet['candid'])
 
@@ -305,14 +345,11 @@ def str2bool(v):
 
 
 def main():
-
-
-
     parser = argparse.ArgumentParser()
-    parser.add_argument('date', type = str, help = 'UTC date as YYMMDD')
-    parser.add_argument('program_id', type = int, help = 'Program ID (1 or 2)')
-    parser.add_argument('--ingest_growth_marshal', type = str2bool, default = False, nargs = '?',
-                        const = True, help = 'Save data to X-ray Counterparts (True/False)')
+    parser.add_argument('date', type=str, help='UTC date as YYMMDD')
+    parser.add_argument('program_id', type=int, help='Program ID (1 or 2)')
+    parser.add_argument('--ingest_growth_marshal', type=str2bool, default=False, nargs='?',
+                        const=True, help='Save data to X-ray Counterparts (True/False)')
 
     args = parser.parse_args()
 
