@@ -179,7 +179,6 @@ def ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx):
         avro_skycoord = SkyCoord(ra=ztf_source['ra'], dec=ztf_source['dec'],
                 frame='icrs', unit=(u.deg))
 
-        # Input avro data ra and dec in SkyCoords
         # Finds the nearest ROSAT source's coordinates to the avro files ra[deg] and dec[deg]
         match_idx, match_sep2d, _ = avro_skycoord.match_to_catalog_sky(rosat_skycoord)
 
@@ -195,14 +194,13 @@ def ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx):
 
         if matched:
             logging.info(f"{ztf_source['object_id']} ({avro_skycoord.to_string('hmsdms')}; {ztf_source['candid']}) matched {match_result['match_name']} ({match_result['match_sep']:.2f} arcsec away)")
-
             return match_result
-    
+
         else:
-            # logging.debug(f"{ztf_source['object_id']} ({avro_skycoord.to_string('hmsdms')}) did not match (nearest source {match_result['match_name']}, {match_result['match_sep']:.2f} arcsec away")
+            logging.debug(f"{ztf_source['object_id']} ({avro_skycoord.to_string('hmsdms')}) did not match (nearest source {match_result['match_name']}, {match_result['match_sep']:.2f} arcsec away")
             return None
-    except Exception as e:
-        logging.info(e)
+    except:
+        logging.exception(f"Unable to crossmatch {ztf_source['object_id']} with ROSAT", e)
 
 
 
