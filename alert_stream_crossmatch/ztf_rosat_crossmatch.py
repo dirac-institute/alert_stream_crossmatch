@@ -9,6 +9,8 @@ import glob
 import time
 import argparse
 import logging
+import sys
+import traceback
 from threading import Lock
 from copy import deepcopy
 import numpy as np
@@ -25,8 +27,8 @@ import functools
 import requests
 from astropy.io import ascii
 from astroquery.simbad import Simbad
-from .constants import UTCFormatter, LOGGING, BASE_DIR, SIMBAD_EXCLUDES
-from .db_caching import create_connection, cache_ZTF_object, select_ZTF_objects
+from .constants import UTCFormatter, LOGGING, BASE_DIR, DB_DIR, SIMBAD_EXCLUDES
+from .db_caching import create_connection, cache_ZTF_object, select_ZTF_objects, get_cached_ids
 
 # Example command line execution:
 
@@ -41,7 +43,6 @@ password_marshal = secrets['marshal_pwd'][0]
 
 # Database of matches
 database = DB_DIR + 'test_sqlite.db'
-conn = create_connection(database)
 
 def read_avro_file(fname):
     """Reads a single packet from an avro file stored with schema on disk."""
@@ -110,7 +111,7 @@ def not_moving_object(packet):
             if diff_date < (0.5/24):
                 continue
             else:
-                logging.debug("Previous detection of {packet['objectId']} {diff_date} days earlier")
+                logging.debug(f"Previous detection of {packet['objectId']} {diff_date} days earlier")
                 return True
 
     return False
@@ -198,7 +199,7 @@ def ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx):
             return match_result
     
         else:
-            logging.debug(f"{ztf_source['object_id']} ({avro_skycoord.to_string('hmsdms')}) did not match (nearest source {match_result['match_name']}, {match_result['match_sep']:.2f} arcsec away")
+            # logging.debug(f"{ztf_source['object_id']} ({avro_skycoord.to_string('hmsdms')}) did not match (nearest source {match_result['match_name']}, {match_result['match_sep']:.2f} arcsec away")
             return None
     except Exception as e:
         logging.info(e)
@@ -241,10 +242,10 @@ def ingest_growth_marshal(candid):
         logging.exception(e)
 
 
-def save_to_db(packet, otype):
+def save_to_db(conn, packet, otype):
     """Save matches to database
     """
-    ztf_object_id = packet['candid']
+    ztf_object_id = packet['objectId']
     simbad_otype = otype
     ra = packet['candidate']['ra']
     dec = packet['candidate']['dec']
@@ -257,14 +258,17 @@ def save_to_db(packet, otype):
         logging.exception(e)
 
 
-def check_for_new_sources(packets_to_simbad):
+def check_for_new_sources(conn, packets_to_simbad):
     """Checks the packets_to_simbad for ZTF objects not previously saved to the database.
     """
-    sources = (packet['candid'] for packet in packets_to_simbad)
-    old_sources = select_ZTF_objects(conn, sources)
-    new_packets = [packet for packet in packets_to_simbad if packet['candid'] not in old_sources]
-    return new_packets
+    sources = (packet['objectId'] for packet in packets_to_simbad)
+    # old_sources = select_ZTF_objects(conn, sources)['ZTF_object_id'].values
+    old_sources = get_cached_ids(conn)
+    logging.debug("Old Sources: {}".format(', '.join(old_sources)))
+    new_packets = [packet for packet in packets_to_simbad if packet['objectId'] not in old_sources]
+    logging.debug("New sources: {}".format(", ".join([packet['objectId'] for packet in new_packets])))
 
+    return new_packets
 
 def process_packet(packet, rosat_skycoord, dfx, saved_packets, lock):
     
@@ -283,12 +287,18 @@ def process_packet(packet, rosat_skycoord, dfx, saved_packets, lock):
 
 def check_simbad_and_save(packets_to_simbad, lock_packets_to_simbad, ingest_GM):
     with lock_packets_to_simbad:
-        new_packets_to_simbad = check_for_new_sources(packets_to_simbad)
+        conn = create_connection(database)
+        try:
+            logging.info("Checking packets for new sources")
+            new_packets_to_simbad = check_for_new_sources(conn, packets_to_simbad)
+            logging.debug(f"{len(packets_to_simbad) - len(new_packets_to_simbad)} sources already cached.")
+        except Exception as e:
+            logging.exception(e)
 
         # Return if sources were previously seen and recorded
         if len(new_packets_to_simbad) == 0:
             logging.debug(f"All {len(packets_to_simbad)} were previously seen.")
-            return
+            return None
 
         logging.info(f'{len(new_packets_to_simbad)} being sent to Simbad for matching')
         ras = []
@@ -322,15 +332,16 @@ def check_simbad_and_save(packets_to_simbad, lock_packets_to_simbad, ingest_GM):
                 simbad_id = matched_row['MAIN_ID'].decode("utf-8")
                 if otype in SIMBAD_EXCLUDES:
                     logging.info(f"{packet['objectId']} found in Simbad as {simbad_id} ({otype}); omitting")
+                    save_to_db(conn, packet, dtype)
                 else:
                     logging.info(f"{packet['objectId']} found in Simbad as {simbad_id} ({otype}); saving")
-                    save_to_db(packet, otype)
+                    save_to_db(conn, packet, otype)
                     if ingest_GM:
                         ingest_growth_marshal(packet['candid'])
             else:
                 # no match in simbad
                 logging.info(f"{packet['objectId']} not found in Simbad")
-                save_to_db(packet, None)
+                save_to_db(conn, packet, None)
                 if ingest_GM:
                     ingest_growth_marshal(packet['candid'])
 
@@ -393,7 +404,7 @@ def main():
         tstart = time.perf_counter()
         tbatch = tstart
         i=0
-        nmod = 100
+        nmod = 1000
         pool = ThreadPoolExecutor(max_workers=64)
         packets_from_kafka = []
         packets_to_simbad = []

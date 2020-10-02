@@ -6,7 +6,11 @@
 import sqlite3
 import pandas as pd
 from sqlite3 import Error
-from constants import DB_DIR
+import os
+import inspect
+import pdb
+
+DB_DIR = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe()))) + '/'
 
 def create_connection(db_file):
     """ Create a database connection to the SQLite database
@@ -85,11 +89,24 @@ def select_ZTF_objects(conn, ztf_object_ids):
     df = pd.DataFrame(rows, columns=["ZTF_object_id","SIMBAD_otype","ra","dec","ROSAT_IAU_NAME"])
     return df
 
+def get_cached_ids(conn):
+    """Return ids of all objects previously seen
+    """
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT ZTF_object_id FROM ZTF_objects")
+    except Error as e:
+        print(e)
+    rows = [x[0] for x in cur.fetchall()]
+    ids = pd.Series(rows)
+    return ids
+
+
 def main():
     database = DB_DIR + 'test_sqlite.db'
 
     sql_create_ZTF_objects_table = """CREATE TABLE IF NOT EXISTS ZTF_objects (
-                                    ZTF_object_id text PRIMARY KEY,
+                                    ZTF_object_id text,
                                     SIMBAD_otype text,
                                     ra float NOT NULL,
                                     dec float NOT NULL,
@@ -105,7 +122,9 @@ def main():
         create_table(conn, sql_create_ZTF_objects_table)
     else:
         print("Error! cannot create the database connection.")
-
+    print("Connected to database")
+    pdb.set_trace()
+    conn.close()
 
 if __name__ == '__main__':
     main()
