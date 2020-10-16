@@ -9,8 +9,10 @@ from sqlite3 import Error
 import os
 import inspect
 import pdb
+import sys
 
 DB_DIR = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe()))) + '/'
+
 
 def create_connection(db_file):
     """ Create a database connection to the SQLite database
@@ -24,12 +26,14 @@ def create_connection(db_file):
 
     return conn
 
+
 def create_table(conn, create_table_sql):
     """ Create a table from the create_table_sql statement
     """
     try:
-        c = conn.cursor()
-        c.execute(create_table_sql)
+        cur = conn.cursor()
+        cur.execute(create_table_sql)
+        cur.close()
     except Error as e:
         print(e)
 
@@ -57,6 +61,7 @@ def cache_ZTF_object(conn, ztf_object):
     cur.execute(sql, ztf_object)
     conn.commit()
     return cur.lastrowid
+
 
 def select_ZTF_objects(conn, ztf_object_ids):
     """
@@ -87,7 +92,9 @@ def select_ZTF_objects(conn, ztf_object_ids):
             print(e)
     rows = cur.fetchall()
     df = pd.DataFrame(rows, columns=["ZTF_object_id","SIMBAD_otype","ra","dec","ROSAT_IAU_NAME"])
+    cur.close()
     return df
+
 
 def get_cached_ids(conn):
     """Return ids of all objects previously seen
@@ -99,8 +106,20 @@ def get_cached_ids(conn):
         print(e)
     rows = [x[0] for x in cur.fetchall()]
     ids = pd.Series(rows)
+    cur.close()
     return ids
 
+
+def clear_ZTF_table(conn):
+    """Delete all rows in ZTF_objects
+    """
+    cur = conn.cursor()
+    cur.execute("DELETE FROM ZTF_objects")         
+    cur.close()
+
+
+def select_all_objects(conn):
+    return select_ZTF_objects(conn, tuple(get_cached_ids(conn).unique()))
 
 def main():
     database = DB_DIR + 'test_sqlite.db'
@@ -122,7 +141,14 @@ def main():
         create_table(conn, sql_create_ZTF_objects_table)
     else:
         print("Error! cannot create the database connection.")
+
+    if (len(sys.argv) > 1) and (sys.argv[1].lower() in ['true', 'y', 'yes']):
+        cur = conn.cursor()
+        cur.execute("DELETE FROM ZTF_objects")
+        cur.close()
+
     print("Connected to database")
+    df = select_all_objects(conn)
     pdb.set_trace()
     conn.close()
 

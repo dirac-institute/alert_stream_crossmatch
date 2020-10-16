@@ -237,10 +237,10 @@ def ingest_growth_marshal(candid):
         r.raise_for_status()
         logging.info(f'Successfully ingested {candid}')
     except Exception as e:
-        logging.exception(e)
+        logging.etion(e)
 
 
-def save_to_db(conn, packet, otype):
+def save_to_db(packet, otype, sources_seen, lock_sources_seen):
     """Save matches to database
     """
     ztf_object_id = packet['objectId']
@@ -248,24 +248,32 @@ def save_to_db(conn, packet, otype):
     ra = packet['candidate']['ra']
     dec = packet['candidate']['dec']
     rosat_iau_name = packet['match']['match_name']
-    logging.debug(f"Saving new source {ztf_object_id} to database.")
+    logging.info(f"Saving new source {ztf_object_id} to database.")
     try:
-        cache_ZTF_object(conn, (ztf_object_id, simbad_otype, ra, dec, rosat_iau_name))
-        logging.debug(f"Successfully saved new source {ztf_object_id} to database.")
+        with lock_sources_seen:
+            conn =  create_connection(database) 
+            if ztf_object_id in sources_seen:
+                logging.info(f"{ztf_object_id} already saved in time between simbad check and now")
+            else:
+                cache_ZTF_object(conn, (ztf_object_id, simbad_otype, ra, dec, rosat_iau_name))
+                logging.debug(f"Successfully saved new source {ztf_object_id} to database.")
+            sources_seen.update((ztf_object_id,))
     except Exception as e:
         logging.exception(e)
 
 
-def check_for_new_sources(conn, packets_to_simbad):
+def check_for_new_sources(packets_to_simbad, sources_seen, lock_sources_seen):
     """Checks the packets_to_simbad for ZTF objects not previously saved to the database.
     """
     sources = (packet['objectId'] for packet in packets_to_simbad)
     # old_sources = select_ZTF_objects(conn, sources)['ZTF_object_id'].values
-    old_sources = get_cached_ids(conn)
-    logging.debug("Old Sources: {}".format(', '.join(old_sources)))
-    new_packets = [packet for packet in packets_to_simbad if packet['objectId'] not in old_sources]
+    # old_sources = get_cached_ids(conn).values
+    with lock_sources_seen:
+        new_packets = [packet for packet in packets_to_simbad if packet['objectId'] not in sources_seen]
+        # sources_seen.update([packet['objectId'] for packet in new_packets])
     logging.debug("New sources: {}".format(", ".join([packet['objectId'] for packet in new_packets])))
-
+    if len(new_packets) < len(packets_to_simbad):
+        logging.info(f"{len(packets_to_simbad) - len(new_packets)} seen before")
     return new_packets
 
 def process_packet(packet, rosat_skycoord, dfx, saved_packets, lock):
@@ -277,18 +285,16 @@ def process_packet(packet, rosat_skycoord, dfx, saved_packets, lock):
         if not_moving_object(packet):
             with lock:
                 logging.debug('adding packet to packets_from_kafka')
-                packet['match'] = matched_source  # TODO figure out how to assemble ROSAT + simbad data
+                packet['match'] = matched_source  # TODO: figure out how to assemble ROSAT + simbad data
                 saved_packets.append(packet)
             # if not is_excluded_simbad_class(ztf_source):
             #    ingest_growth_marshal(ztf_source['candid'])
 
-
-def check_simbad_and_save(packets_to_simbad, lock_packets_to_simbad, ingest_GM):
+def check_simbad_and_save(packets_to_simbad, lock_packets_to_simbad, sources_seen, lock_sources_seen, ingest_GM):
     with lock_packets_to_simbad:
-        conn = create_connection(database)
         try:
             logging.info("Checking packets for new sources")
-            new_packets_to_simbad = check_for_new_sources(conn, packets_to_simbad)
+            new_packets_to_simbad = check_for_new_sources(packets_to_simbad, sources_seen, lock_sources_seen)
             logging.debug(f"{len(packets_to_simbad) - len(new_packets_to_simbad)} sources already cached.")
         except Exception as e:
             logging.exception(e)
@@ -309,7 +315,7 @@ def check_simbad_and_save(packets_to_simbad, lock_packets_to_simbad, ingest_GM):
 
         MATCH_RADIUS = 2*u.arcsecond
         try:
-            result_table = customSimbad.query_region(sc, radius=MATCH_RADIUS)
+            result_table = customSimbad.query_region(sc, radius=MATCH_RADIUS) # TODO: examine result_table for errors
         except Exception as e:
             logging.exception("Error querying Simbad",e)
 
@@ -321,28 +327,29 @@ def check_simbad_and_save(packets_to_simbad, lock_packets_to_simbad, ingest_GM):
 
         idx, sep2d, _ = match_coordinates_sky(sc, sc_simbad)
         assert(len(sc) == len(idx))
-
-        for i, packet in enumerate(new_packets_to_simbad):
-            # check if we have a simbad match for each packet we sent
-            if sep2d[i] <= MATCH_RADIUS:
-                matched_row = result_table[idx[i]]
-                otype = matched_row['OTYPE_3'].decode("utf-8")
-                simbad_id = matched_row['MAIN_ID'].decode("utf-8")
-                if otype in SIMBAD_EXCLUDES:
-                    logging.info(f"{packet['objectId']} found in Simbad as {simbad_id} ({otype}); omitting")
-                    save_to_db(conn, packet, dtype)
+        try:
+            for i, packet in enumerate(new_packets_to_simbad):
+                # check if we have a simbad match for each packet we sent
+                if sep2d[i] <= MATCH_RADIUS:
+                    matched_row = result_table[idx[i]]
+                    otype = matched_row['OTYPE_3'].decode("utf-8")
+                    simbad_id = matched_row['MAIN_ID'].decode("utf-8")
+                    if otype in SIMBAD_EXCLUDES:
+                        logging.info(f"{packet['objectId']} found in Simbad as {simbad_id} ({otype}); omitting")
+                        save_to_db(packet, otype, sources_seen, lock_sources_seen)
+                    else:
+                        logging.info(f"{packet['objectId']} found in Simbad as {simbad_id} ({otype}); saving")
+                        save_to_db(packet, otype, sources_seen, lock_sources_seen)
+                        if ingest_GM:
+                            ingest_growth_marshal(packet['candid'])
                 else:
-                    logging.info(f"{packet['objectId']} found in Simbad as {simbad_id} ({otype}); saving")
-                    save_to_db(conn, packet, otype)
+                    # no match in simbad
+                    logging.info(f"{packet['objectId']} not found in Simbad")
+                    save_to_db(packet, None, sources_seen, lock_sources_seen)
                     if ingest_GM:
                         ingest_growth_marshal(packet['candid'])
-            else:
-                # no match in simbad
-                logging.info(f"{packet['objectId']} not found in Simbad")
-                save_to_db(conn, packet, None)
-                if ingest_GM:
-                    ingest_growth_marshal(packet['candid'])
-
+        except Exception as E:
+            logging.exception(e)
 
 def str2bool(v):
     if isinstance(v, bool):
@@ -406,8 +413,14 @@ def main():
         pool = ThreadPoolExecutor(max_workers=64)
         packets_from_kafka = []
         packets_to_simbad = []
+        conn = create_connection(database)
+        sources_seen = set(get_cached_ids(conn).values)
+        logging.info(f"{len(sources_seen)} sources previously seen")
+        n0_sources = len(sources_seen)
+        conn.close()
         lock_packets_from_kafka = Lock()
         lock_packets_to_simbad = Lock()
+        lock_sources_seen = Lock()
         logging.debug('begin ingesting messages')
         try:
             # Consume messages
@@ -416,6 +429,9 @@ def main():
                 if i % nmod  == 0:
                     elapsed = time.perf_counter() - tstart
                     logging.info(f'Consumed {i} messages in {elapsed:.1f} sec ({i/elapsed:.1f} messages/s)')
+                    with lock_sources_seen:
+                        logging.info(f'Matched {len(sources_seen) - n0_sources} sources seen in {elapsed:.1f} sec')
+
 
 
                 # query simbad in batches
@@ -431,6 +447,8 @@ def main():
                             functools.partial(check_simbad_and_save,
                                 packets_to_simbad,
                                 lock_packets_to_simbad,
+                                sources_seen,
+                                lock_sources_seen,
                                 args.ingest_growth_marshal))
                     tbatch = time.perf_counter()
 

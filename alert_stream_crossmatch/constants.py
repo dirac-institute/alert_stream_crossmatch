@@ -42,7 +42,7 @@ LOGGING = {
             'stream'  : 'ext://sys.stdout'
         },
         'logfile': {
-            'level': f'{logging_level}',
+            'level': f'DEBUG',
             'class': 'logging.handlers.TimedRotatingFileHandler',
             'filename': f'{BASE_DIR}/../logs/ztf.log',
             'formatter': 'utc',
