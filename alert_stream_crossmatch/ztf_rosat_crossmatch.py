@@ -7,6 +7,7 @@
 import io
 import glob
 import time
+import datetime
 import argparse
 import logging
 import sys
@@ -42,7 +43,7 @@ username_marshal = secrets['marshal_user'][0]
 password_marshal = secrets['marshal_pwd'][0]
 
 # Database of matches
-database = DB_DIR + 'test_sqlite.db'
+# database = DB_DIR + 'test_sqlite2.db'
 
 def read_avro_file(fname):
     """Reads a single packet from an avro file stored with schema on disk."""
@@ -100,9 +101,15 @@ def not_moving_object(packet):
     """
 
     date0 = float(packet['candidate']['jd'])
-    if len(packet['prv_candidates']) == 0:
-        logging.debug("No previous detections of {packet['objectId']}")
-        return False
+    try:
+        if packet['prv_candidates'] is None:
+            logging.info("prv_candidates is None")
+            return False
+        if len(packet['prv_candidates']) == 0:
+            logging.debug("No previous detections of {packet['objectId']}")
+            return False
+    except Exception as e:
+        logging.info(e)
 
     for prv_candidate in packet['prv_candidates']:
         if prv_candidate['candid'] is not None:
@@ -240,7 +247,7 @@ def ingest_growth_marshal(candid):
         logging.etion(e)
 
 
-def save_to_db(packet, otype, sources_seen, lock_sources_seen):
+def save_to_db(packet, otype, sources_seen, lock_sources_seen, database):
     """Save matches to database
     """
     ztf_object_id = packet['objectId']
@@ -265,9 +272,6 @@ def save_to_db(packet, otype, sources_seen, lock_sources_seen):
 def check_for_new_sources(packets_to_simbad, sources_seen, lock_sources_seen):
     """Checks the packets_to_simbad for ZTF objects not previously saved to the database.
     """
-    sources = (packet['objectId'] for packet in packets_to_simbad)
-    # old_sources = select_ZTF_objects(conn, sources)['ZTF_object_id'].values
-    # old_sources = get_cached_ids(conn).values
     with lock_sources_seen:
         new_packets = [packet for packet in packets_to_simbad if packet['objectId'] not in sources_seen]
         # sources_seen.update([packet['objectId'] for packet in new_packets])
@@ -290,7 +294,7 @@ def process_packet(packet, rosat_skycoord, dfx, saved_packets, lock):
             # if not is_excluded_simbad_class(ztf_source):
             #    ingest_growth_marshal(ztf_source['candid'])
 
-def check_simbad_and_save(packets_to_simbad, lock_packets_to_simbad, sources_seen, lock_sources_seen, ingest_GM):
+def check_simbad_and_save(packets_to_simbad, lock_packets_to_simbad, sources_seen, lock_sources_seen, database, ingest_GM):
     with lock_packets_to_simbad:
         try:
             logging.info("Checking packets for new sources")
@@ -316,17 +320,21 @@ def check_simbad_and_save(packets_to_simbad, lock_packets_to_simbad, sources_see
         MATCH_RADIUS = 2*u.arcsecond
         try:
             result_table = customSimbad.query_region(sc, radius=MATCH_RADIUS) # TODO: examine result_table for errors
+            # annoyingly, the result table is unsorted and unlabeled, so we have
+            # to re-match it to our packets
+            if result_table is not None:
+                sc_simbad = SkyCoord(result_table['RA'], result_table['DEC'],
+                        unit=('hourangle','degree'))
+                idx, sep2d, _ = match_coordinates_sky(sc, sc_simbad)
+                # assert(len(sc) == len(idx))
+            else:
+                logging.info("No matches found in SIMBAD")
+                return
+
         except Exception as e:
             logging.exception("Error querying Simbad",e)
 
-        # annoyingly, the result table is unsorted and unlabeled, so we have
-        # to re-match it to our packets
 
-        sc_simbad = SkyCoord(result_table['RA'], result_table['DEC'],
-                unit=('hourangle','degree'))
-
-        idx, sep2d, _ = match_coordinates_sky(sc, sc_simbad)
-        assert(len(sc) == len(idx))
         try:
             for i, packet in enumerate(new_packets_to_simbad):
                 # check if we have a simbad match for each packet we sent
@@ -336,19 +344,19 @@ def check_simbad_and_save(packets_to_simbad, lock_packets_to_simbad, sources_see
                     simbad_id = matched_row['MAIN_ID'].decode("utf-8")
                     if otype in SIMBAD_EXCLUDES:
                         logging.info(f"{packet['objectId']} found in Simbad as {simbad_id} ({otype}); omitting")
-                        save_to_db(packet, otype, sources_seen, lock_sources_seen)
+                        save_to_db(packet, otype, sources_seen, lock_sources_seen, database)
                     else:
                         logging.info(f"{packet['objectId']} found in Simbad as {simbad_id} ({otype}); saving")
-                        save_to_db(packet, otype, sources_seen, lock_sources_seen)
+                        save_to_db(packet, otype, sources_seen, lock_sources_seen, database)
                         if ingest_GM:
                             ingest_growth_marshal(packet['candid'])
                 else:
                     # no match in simbad
                     logging.info(f"{packet['objectId']} not found in Simbad")
-                    save_to_db(packet, None, sources_seen, lock_sources_seen)
+                    save_to_db(packet, None, sources_seen, lock_sources_seen, database)
                     if ingest_GM:
                         ingest_growth_marshal(packet['candid'])
-        except Exception as E:
+        except Exception as e:
             logging.exception(e)
 
 def str2bool(v):
@@ -366,8 +374,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('date', type=str, help='UTC date as YYMMDD')
     parser.add_argument('program_id', type=int, help='Program ID (1 or 2)')
-    parser.add_argument('--ingest_growth_marshal', type=str2bool, default=False, nargs='?',
-                        const=True, help='Save data to X-ray Counterparts (True/False)')
+    # parser.add_argument('--ingest_growth_marshal', type=str2bool, default=False, nargs='?',
+    #                    const=True, help='Save data to X-ray Counterparts (True/False)')
+    parser.add_argument('threads', type=int, help='Number of threads (1 to 64)')
+    parser.add_argument('suffix', type=str, help='suffix of db')
 
     args = parser.parse_args()
 
@@ -376,17 +386,23 @@ def main():
 
     if args.program_id not in [1,2]:
         raise ValueError(f'Program id must be 1 or 2.  Provided {args.program_id}')
-
-    if not isinstance(args.ingest_growth_marshal, bool):
-        raise ValueError(f'Ingest growth marshal indicator must be True or False.  Provided {args.ingest_growth_marshal}')
+ 
+    if (args.threads < 1) or (args.threads > 64):
+        raise ValueError(f'threads must be between 1 and 64.  Provided {args.threads}')
+ 
+    # if not isinstance(args.ingest_growth_marshal, bool):
+    #     raise ValueError(f'Ingest growth marshal indicator must be True or False.  Provided {args.ingest_growth_marshal}')
+    
+    database = DB_DIR + f'test_sqlite{args.suffix}.db'
     
     kafka_topic = f"ztf_20{args.date}_programid{args.program_id}"
     kafka_server = "partnership.alerts.ztf.uw.edu:9092"
 
-    LOGGING['handlers']['logfile']['filename'] = f'{BASE_DIR}/../logs/{kafka_topic}.log'
+    now = datetime.datetime.now().strftime("%d%m%y_%H%M%S")    
+    LOGGING['handlers']['logfile']['filename'] = f'{BASE_DIR}/../logs/{kafka_topic}_{now}.log'     
     logging.config.dictConfig(LOGGING)
-
-    logging.debug(f"Args parsed and validated: {args.date}, {args.program_id}, {args.ingest_growth_marshal}")    
+    
+    logging.debug(f"Args parsed and validated: {args.date}, {args.program_id}") #, {args.ingest_growth_marshal}")    
 
     # load X-ray catalogs
     dfx, rosat_skycoord = load_rosat()
@@ -403,17 +419,21 @@ def main():
             loop=loop, bootstrap_servers=kafka_server,
             auto_offset_reset="earliest",
             value_deserializer=read_avro_bytes,
-            group_id="uw_xray")
+            group_id=f"uw_xray_{args.suffix}")
         # Get cluster layout and join group `my-group`
         await consumer.start()
         tstart = time.perf_counter()
         tbatch = tstart
         i=0
         nmod = 1000
-        pool = ThreadPoolExecutor(max_workers=64)
+        pool = ThreadPoolExecutor(max_workers=args.threads)
         packets_from_kafka = []
         packets_to_simbad = []
-        conn = create_connection(database)
+        try:
+            conn = create_connection(database)
+        except Exception as e:
+            logging.exception(f'Could not connect to {database}', e)
+            return
         sources_seen = set(get_cached_ids(conn).values)
         logging.info(f"{len(sources_seen)} sources previously seen")
         n0_sources = len(sources_seen)
@@ -449,7 +469,8 @@ def main():
                                 lock_packets_to_simbad,
                                 sources_seen,
                                 lock_sources_seen,
-                                args.ingest_growth_marshal))
+                                database,
+                                False)) # args.ingest_growth_marshal))
                     tbatch = time.perf_counter()
 
                 #print("consumed: ", msg.topic, msg.partition, msg.offset,
