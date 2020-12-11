@@ -63,6 +63,17 @@ def cache_ZTF_object(conn, ztf_object):
     return cur.lastrowid
 
 
+def insert_data(conn, table, val_dict):
+    cur = conn.cursor()
+    try:
+        cols = tuple(val_dict.keys())
+        vals = (val_dict[col] for col in cols)
+        cur.execute(f"INSERT INTO {table} COLUMNS {str(cols)} VALUES {str(vals)}")
+    except Error as e:
+        print(e)
+    conn.commit()
+
+
 def select_ZTF_objects(conn, ztf_object_ids):
     """
     Select rows from database with id(s) in ztf_object_ids.
@@ -96,12 +107,15 @@ def select_ZTF_objects(conn, ztf_object_ids):
     return df
 
 
-def get_cached_ids(conn):
+def get_cached_ids(conn, condition=None):
     """Return ids of all objects previously seen
     """
     cur = conn.cursor()
     try:
-        cur.execute("SELECT ZTF_object_id FROM ZTF_objects")
+        if condition is None:
+            cur.execute("SELECT ZTF_object_id FROM ZTF_objects")
+        else:
+            cur.execute(f"SELECT ZTF_object_id FROM ZTF_objects WHERE {condition}")
     except Error as e:
         print(e)
     rows = [x[0] for x in cur.fetchall()]
@@ -121,6 +135,29 @@ def clear_ZTF_table(conn):
 def select_all_objects(conn):
     return select_ZTF_objects(conn, tuple(get_cached_ids(conn).unique()))
 
+
+def update_value(conn, val_dict, condition):
+    """Update the value of col with val, for the given conditions
+    Ex. val_dict = {'SIMBAD_otype': 'Sy1'}, condition = 'ZTF_object_id = ZTF19abkfpqk' """
+    cur = conn.cursor()
+    try:
+        cur.execute("UPDATE table SET" + " ".join([f"{col} = {val_dict[col]}" for col in val_dict.keys()]) +
+                    f"WHERE {condition}")
+    except Error as e:
+        print(e)
+    conn.commit()
+
+
+def insert_lc_dataframe(conn, df):
+    df.to_sql('lightcurves', conn, if_exists='append')
+
+
+def save_cutout(conn, ztf_object_id, jd, stamp):
+    cur = conn.cursor()
+    cur.execute(f"INSERT INTO cutouts(ZTF_object_id, jd, cutout) VALUES ({ztf_object_id}, {jd}, {stamp})")
+    conn.commit()
+
+
 def main():
     # print("arg 1: delete from database, arg 2: suffix for database")
     database = DB_DIR + 'test_sqlite{}.db'.format(sys.argv[2])
@@ -128,10 +165,28 @@ def main():
     sql_create_ZTF_objects_table = """CREATE TABLE IF NOT EXISTS ZTF_objects (
                                     ZTF_object_id text,
                                     SIMBAD_otype text,
-                                    ra float NOT NULL,
-                                    dec float NOT NULL,
-                                    ROSAT_IAU_NAME text
+                                    ra float,
+                                    dec float,
+                                    ROSAT_IAU_NAME text,
+                                    xray_counterpart int,
+                                    SIMBAD_include int
                                 );"""
+
+    sql_create_lightcurves_table = """CREATE TABLE IF NOT EXISTS lightcurves (
+                                    ZTF_object_id text,
+                                    jd text,
+                                    fid text,
+                                    magpsf float,
+                                    sigmapsf float,
+                                    diffmaglim float
+                                );"""
+
+    sql_create_cutouts_table = """CREATE TABLE IF NOT EXISTS cutouts (
+                                    ZTF_object_id text,
+                                    jd text,
+                                    cutout blob
+                                );"""
+
 
     # create a database connection
     conn = create_connection(database)
@@ -140,6 +195,8 @@ def main():
     if conn is not None:
         # create tasks table
         create_table(conn, sql_create_ZTF_objects_table)
+        create_table(conn, sql_create_lightcurves_table)
+        create_table(conn, sql_create_cutouts_table)
     else:
         print("Error! cannot create the database connection.")
 

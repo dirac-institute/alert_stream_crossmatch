@@ -52,6 +52,7 @@ def read_avro_file(fname):
         for packet in freader:
             return packet
 
+
 def read_avro_bytes(buf):
     """Reads a single packet from an avro file stored with schema on disk."""
     with io.BytesIO(buf) as f:
@@ -59,11 +60,11 @@ def read_avro_bytes(buf):
         for packet in freader:
             return packet
 
+
 def get_candidate_info(packet):
 
     return {'ra': packet['candidate']['ra'], 'dec': packet['candidate']['dec'],
             'object_id': packet['objectId'], 'candid': packet['candid']}
-
 
 
 def load_rosat():
@@ -133,6 +134,7 @@ def query_simbad(ra,dec):
     result_table = customSimbad.query_region(sc, radius=2*u.arcsecond)
     return result_table
 
+
 def is_excluded_simbad_class(ztf_source):
     """Is the object in Simbad, with object types we reject (e.g., AGN)?
     """
@@ -156,7 +158,6 @@ def is_excluded_simbad_class(ztf_source):
         # if this doesn't work, record the exception and continue
         logging.exception(f"Error querying Simbad for {ztf_source['object_id']}",e)
         return False
-
 
 
 def ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx):
@@ -208,7 +209,6 @@ def ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx):
             return None
     except:
         logging.exception(f"Unable to crossmatch {ztf_source['object_id']} with ROSAT", e)
-
 
 
 def get_programidx(program_name, username, password):
@@ -279,6 +279,15 @@ def check_for_new_sources(packets_to_simbad, sources_seen, lock_sources_seen):
     if len(new_packets) < len(packets_to_simbad):
         logging.info(f"{len(packets_to_simbad) - len(new_packets)} seen before")
     return new_packets
+
+
+def make_lc_dataframe(packet):
+    # df = pd.DataFrame(packet['candidate'], index=[0])
+    df_prv = pd.DataFrame(packet['prv_candidates'])
+    # return pd.concat([df,df_prv], ignore_index=True)
+    df_prv['ZTF_object_id'] = packet['candid']
+    return df_prv[['ZTF_object_id', 'jd', 'fid', 'magpsf', 'sigmapsf', 'diffmaglim']]
+
 
 def process_packet(packet, rosat_skycoord, dfx, saved_packets, lock):
     
