@@ -3,3 +3,5 @@ logs/
 secrets.csv
 *.db
 *.pyc
+local/
+.idea

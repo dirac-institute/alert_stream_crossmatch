@@ -67,6 +67,16 @@ def get_candidate_info(packet):
             'object_id': packet['objectId'], 'candid': packet['candid']}
 
 
+def save_cutout_fits(packet, output=output_dir):
+    """Save fits cutouts from packed into output_dir"""
+    objectId = packet['objectId']
+    pid = packet['candidate']['pid']
+    for im_type in ['Science', 'Template', 'Difference']:
+        with gzip.open(io.BytesIO(packet[f'cutout{im_type}']['stampData']), 'rb') as f:
+            with fits.open(io.BytesIO(f.read())) as hdul:
+                hdul.writeto(f'{output}/{objectId}_{pid}_{im_type}.fits')
+
+
 def load_rosat():
     # Open ROSAT catalog
     rosat_fits = fits.open('/epyc/data/rosat_2rxs/cat2rxs.fits')

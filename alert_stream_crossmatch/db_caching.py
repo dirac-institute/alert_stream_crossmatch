@@ -67,8 +67,11 @@ def insert_data(conn, table, val_dict):
     cur = conn.cursor()
     try:
         cols = tuple(val_dict.keys())
-        vals = (val_dict[col] for col in cols)
-        cur.execute(f"INSERT INTO {table} COLUMNS {str(cols)} VALUES {str(vals)}")
+        vals = tuple('{}'.format(val_dict[col]) for col in cols)
+        if len(cols) == 1:
+            cols = f"({cols[0]})"
+            vals = f"('{vals[0]}')"
+        cur.execute(f"INSERT INTO {table}{str(cols)} VALUES {str(vals)}")
     except Error as e:
         print(e)
     conn.commit()
@@ -102,7 +105,7 @@ def select_ZTF_objects(conn, ztf_object_ids):
         except Error as e:
             print(e)
     rows = cur.fetchall()
-    df = pd.DataFrame(rows, columns=["ZTF_object_id","SIMBAD_otype","ra","dec","ROSAT_IAU_NAME"])
+    df = pd.DataFrame(rows, columns=["ZTF_object_id","SIMBAD_otype","ra","dec","ROSAT_IAU_NAME", "SIMBAD_include"])
     cur.close()
     return df
 
@@ -136,25 +139,43 @@ def select_all_objects(conn):
     return select_ZTF_objects(conn, tuple(get_cached_ids(conn).unique()))
 
 
-def update_value(conn, val_dict, condition):
+def update_value(conn, val_dict, condition, table='ZTF_objects'):
     """Update the value of col with val, for the given conditions
-    Ex. val_dict = {'SIMBAD_otype': 'Sy1'}, condition = 'ZTF_object_id = ZTF19abkfpqk' """
+    Ex. val_dict = {'SIMBAD_otype': 'Sy1'}, condition = 'ZTF_object_id = \"ZTF19abkfpqk\"' """
     cur = conn.cursor()
     try:
-        cur.execute("UPDATE table SET" + " ".join([f"{col} = {val_dict[col]}" for col in val_dict.keys()]) +
-                    f"WHERE {condition}")
+        cur.execute(f"UPDATE {table} SET " + ", ".join([f"{col} = {val_dict[col]}" for col in val_dict.keys()]) +
+                    f" WHERE {condition}")
     except Error as e:
         print(e)
     conn.commit()
 
 
+def make_dataframe(packet, repeat_obs=True):
+    df = pd.DataFrame(packet['candidate'], index=[0])
+    if repeat_obs:
+        df['ZTF_object_id'] = packet['objectId']
+        return df[["ZTF_object_id", "jd", "fid", "magpsf", "sigmapsf", "diffmaglim"]]
+
+    df_prv = pd.DataFrame(packet['prv_candidates'])
+    df_merged = pd.concat([df, df_prv], ignore_index=True)
+    df_merged['ZTF_object_id'] = packet['objectId']
+    return df_merged[["ZTF_object_id", "jd", "fid", "magpsf", "sigmapsf", "diffmaglim"]]
+
+
 def insert_lc_dataframe(conn, df):
-    df.to_sql('lightcurves', conn, if_exists='append')
+    df.to_sql('lightcurves', conn, if_exists='append', index=False)
 
 
-def save_cutout(conn, ztf_object_id, jd, stamp):
+def save_cutout(conn, data):
+    ztf_object_id = data['objectId']
+    jd = data['candidate']['jd']
+    cutout_science = data['cutoutScience']['stampData']
+    cutout_difference = data['cutoutDifference']['stampData']
+    cutout_template = data['cutoutTemplate']['stampData']
     cur = conn.cursor()
-    cur.execute(f"INSERT INTO cutouts(ZTF_object_id, jd, cutout) VALUES ({ztf_object_id}, {jd}, {stamp})")
+    cur.execute(f"""INSERT INTO cutouts(ZTF_object_id, jd, cutout_science, cutout_template, cutout_difference) 
+                    VALUES (?,?,?);""", (ztf_object_id, jd, cutout_science, cutout_template, cutout_difference))
     conn.commit()
 
 
@@ -168,7 +189,6 @@ def main():
                                     ra float,
                                     dec float,
                                     ROSAT_IAU_NAME text,
-                                    xray_counterpart int,
                                     SIMBAD_include int
                                 );"""
 
@@ -184,7 +204,9 @@ def main():
     sql_create_cutouts_table = """CREATE TABLE IF NOT EXISTS cutouts (
                                     ZTF_object_id text,
                                     jd text,
-                                    cutout blob
+                                    cutout_science blob,
+                                    cutout_template blob,
+                                    cutout_difference blob
                                 );"""
 
 
