@@ -70,7 +70,7 @@ def get_candidate_info(packet):
 
 
 def save_cutout_fits(packet, output):
-    """Save fits cutouts from packed into output_dir"""
+    """Save fits cutouts from packed into output."""
     try:
         objectId = packet["objectId"]
         pid = packet["candidate"]["pid"]
@@ -81,7 +81,9 @@ def save_cutout_fits(packet, output):
     except Exception as e:
         logging.exception(e)
 
+
 def make_dataframe(packet, repeat_obs=True):
+    """Extract relevant lightcurve data from packet into pandas DataFrame."""
     try:
         df = pd.DataFrame(packet["candidate"], index=[0])
         if repeat_obs:
@@ -94,6 +96,7 @@ def make_dataframe(packet, repeat_obs=True):
         return df_merged[["ZTF_object_id", "jd", "fid", "magpsf", "sigmapsf", "diffmaglim"]]
     except Exception as e:
         logging.exception(e)
+
 
 def load_rosat():
     # Open ROSAT catalog
@@ -272,15 +275,13 @@ def ingest_growth_marshal(candid):
         r.raise_for_status()
         logging.info(f"Successfully ingested {candid}")
     except Exception as e:
-        logging.etion(e)
+        logging.exception(e)
 
 
 def save_to_db(packet, otype, sources_seen, lock_sources_seen, database, interest):
     """Save matches to database
     """
     ztf_object_id = packet["objectId"]
-    ra = packet["candidate"]["ra"]
-    dec = packet["candidate"]["dec"]
     data_to_update = {"SIMBAD_otype": f'"{otype}"', "ra": packet["candidate"]["ra"],
                       "dec": packet["candidate"]["dec"], "SIMBAD_include": interest}
     logging.info(f"Saving new source {ztf_object_id} to database.")
@@ -310,6 +311,14 @@ def check_for_new_sources(packets_to_simbad, sources_seen, lock_sources_seen):
     """
     with lock_sources_seen:
         new_packets = [packet for packet in packets_to_simbad if packet["objectId"] not in sources_seen]
+        old_packets = [packet for packet in packets_to_simbad if packet["objectId"] in sources_seen]
+
+        for packet in old_packets:
+            dflc = make_dataframe(packet, repeat_obs=True)
+            insert_lc_dataframe(conn, dflc)
+            logging.debug(f"Successfully updated lightcurve data from {ztf_object_id} to database.")
+            save_cutout_fits(packet, FITS_DIR)
+            logging.debug(f"Successfully updated cutouts of {ztf_object_id}")
         # sources_seen.update([packet["objectId"] for packet in new_packets])
     logging.debug("New sources: {}".format(", ".join([packet["objectId"] for packet in new_packets])))
     if len(new_packets) < len(packets_to_simbad):
@@ -317,18 +326,13 @@ def check_for_new_sources(packets_to_simbad, sources_seen, lock_sources_seen):
     return new_packets
 
 
-def make_lc_dataframe(packet):
-    # df = pd.DataFrame(packet["candidate"], index=[0])
-    df_prv = pd.DataFrame(packet["prv_candidates"])
-    # return pd.concat([df,df_prv], ignore_index=True)
-    df_prv["ZTF_object_id"] = packet["candid"]
-    return df_prv[["ZTF_object_id", "jd", "fid", "magpsf", "sigmapsf", "diffmaglim"]]
-
-
-def process_packet(packet, rosat_skycoord, dfx, saved_packets, lock, database):
-    
+def process_packet(packet, rosat_skycoord, dfx, saved_packets, lock, sources_seen, database):
+    """Examine packet for matches in the ROSAT database. Save object to database if match found"""
     ztf_source = get_candidate_info(packet)
-
+    if packet["objectId"] in sources_seen:
+        logging.debug(f"{packet['objectId']} already known match, adding packet to packets_from_kafka")
+        saved_packets.append(packet)
+        return
     matched_source = ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx)
     if matched_source is not None:
         if not_moving_object(packet):
@@ -536,7 +540,7 @@ def main():
                 loop.run_in_executor(pool,
                         functools.partial(process_packet,
                             packet, rosat_skycoord, dfx, packets_from_kafka,
-                            lock_packets_from_kafka, database))
+                            lock_packets_from_kafka, sources_seen, database))
 
         finally:
             # Will leave consumer group; perform autocommit if enabled.
