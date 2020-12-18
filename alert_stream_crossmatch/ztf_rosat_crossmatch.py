@@ -306,33 +306,43 @@ def save_to_db(packet, otype, sources_seen, lock_sources_seen, database, interes
         logging.exception(e)
 
 
-def check_for_new_sources(packets_to_simbad, sources_seen, lock_sources_seen):
+def check_for_new_sources(packets_to_simbad, sources_seen, lock_sources_seen, database):
     """Checks the packets_to_simbad for ZTF objects not previously saved to the database.
     """
-    with lock_sources_seen:
-        new_packets = [packet for packet in packets_to_simbad if packet["objectId"] not in sources_seen]
-        old_packets = [packet for packet in packets_to_simbad if packet["objectId"] in sources_seen]
+    try:
+        with lock_sources_seen:
+            new_packets = [packet for packet in packets_to_simbad if packet["objectId"] not in sources_seen]
+            old_packets = [packet for packet in packets_to_simbad if packet["objectId"] in sources_seen]
 
-        for packet in old_packets:
-            dflc = make_dataframe(packet, repeat_obs=True)
-            insert_lc_dataframe(conn, dflc)
-            logging.debug(f"Successfully updated lightcurve data from {ztf_object_id} to database.")
-            save_cutout_fits(packet, FITS_DIR)
-            logging.debug(f"Successfully updated cutouts of {ztf_object_id}")
-        # sources_seen.update([packet["objectId"] for packet in new_packets])
-    logging.debug("New sources: {}".format(", ".join([packet["objectId"] for packet in new_packets])))
-    if len(new_packets) < len(packets_to_simbad):
-        logging.info(f"{len(packets_to_simbad) - len(new_packets)} seen before")
+            for packet in old_packets:
+                conn = create_connection(database)
+                dflc = make_dataframe(packet, repeat_obs=True)
+                insert_lc_dataframe(conn, dflc)
+                logging.debug(f"Successfully updated lightcurve data from {ztf_object_id} to database.")
+                save_cutout_fits(packet, FITS_DIR)
+                logging.debug(f"Successfully updated cutouts of {ztf_object_id}")
+                conn.close()
+            # sources_seen.update([packet["objectId"] for packet in new_packets])
+        logging.debug("New sources: {}".format(", ".join([packet["objectId"] for packet in new_packets])))
+        if len(new_packets) < len(packets_to_simbad):
+            logging.info(f"{len(packets_to_simbad) - len(new_packets)} seen before")
+
+    except Exception as e:
+        logging.exception(e)
+
     return new_packets
 
 
 def process_packet(packet, rosat_skycoord, dfx, saved_packets, lock, sources_seen, database):
     """Examine packet for matches in the ROSAT database. Save object to database if match found"""
     ztf_source = get_candidate_info(packet)
+    conn = create_connection(database)
     if packet["objectId"] in sources_seen:
         logging.debug(f"{packet['objectId']} already known match, adding packet to packets_from_kafka")
         saved_packets.append(packet)
+        conn.close()
         return
+
     matched_source = ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx)
     if matched_source is not None:
         if not_moving_object(packet):
@@ -341,10 +351,10 @@ def process_packet(packet, rosat_skycoord, dfx, saved_packets, lock, sources_see
                 # packet["match"] = matched_source  # TODO: figure out how to assemble ROSAT + simbad data
                 saved_packets.append(packet)
                 try:
-                    conn = create_connection(database)
                     data_to_insert = {"ZTF_object_id": packet["objectId"], "ROSAT_IAU_NAME": matched_source["match_name"]}
                     insert_data(conn, "ZTF_objects", data_to_insert)
                     logging.debug(f"Successfully saved {packet['objectId']} to database")
+                    conn.close()
                 except Exception as e:
                     logging.exception(e)
    
@@ -356,7 +366,7 @@ def check_simbad_and_save(packets_to_simbad, lock_packets_to_simbad, sources_see
     with lock_packets_to_simbad:
         try:
             logging.info("Checking packets for new sources")
-            new_packets_to_simbad = check_for_new_sources(packets_to_simbad, sources_seen, lock_sources_seen)
+            new_packets_to_simbad = check_for_new_sources(packets_to_simbad, sources_seen, lock_sources_seen, database)
             logging.debug(f"{len(packets_to_simbad) - len(new_packets_to_simbad)} sources already cached.")
         except Exception as e:
             logging.exception(e)
@@ -466,9 +476,7 @@ def main():
     # load X-ray catalogs
     dfx, rosat_skycoord = load_rosat()
 
-
     logging.info(f"Connecting to Kafka topic {kafka_topic}")
-
 
     loop = asyncio.get_event_loop()
 
