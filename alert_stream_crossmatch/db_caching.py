@@ -153,18 +153,6 @@ def update_value(conn, val_dict, condition, table='ZTF_objects'):
     conn.commit()
 
 
-def make_dataframe(packet, repeat_obs=True):
-    df = pd.DataFrame(packet['candidate'], index=[0])
-    if repeat_obs:
-        df['ZTF_object_id'] = packet['objectId']
-        return df[["ZTF_object_id", "jd", "fid", "magpsf", "sigmapsf", "diffmaglim"]]
-
-    df_prv = pd.DataFrame(packet['prv_candidates'])
-    df_merged = pd.concat([df, df_prv], ignore_index=True)
-    df_merged['ZTF_object_id'] = packet['objectId']
-    return df_merged[["ZTF_object_id", "jd", "fid", "magpsf", "sigmapsf", "diffmaglim"]]
-
-
 def insert_lc_dataframe(conn, df):
     df.to_sql('lightcurves', conn, if_exists='append', index=False)
 
