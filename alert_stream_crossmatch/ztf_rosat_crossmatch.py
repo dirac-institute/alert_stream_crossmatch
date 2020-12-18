@@ -11,6 +11,7 @@ import datetime
 import argparse
 import logging
 import sys
+import gzip
 import traceback
 from threading import Lock
 from copy import deepcopy
@@ -68,27 +69,31 @@ def get_candidate_info(packet):
             "object_id": packet["objectId"], "candid": packet["candid"]}
 
 
-def save_cutout_fits(packet, output=output_dir):
+def save_cutout_fits(packet, output):
     """Save fits cutouts from packed into output_dir"""
-    objectId = packet["objectId"]
-    pid = packet["candidate"]["pid"]
-    for im_type in ["Science", "Template", "Difference"]:
-        with gzip.open(io.BytesIO(packet[f"cutout{im_type}"]["stampData"]), "rb") as f:
-            with fits.open(io.BytesIO(f.read())) as hdul:
-                hdul.writeto(f"{output}/{objectId}_{pid}_{im_type}.fits")
-
+    try:
+        objectId = packet["objectId"]
+        pid = packet["candidate"]["pid"]
+        for im_type in ["Science", "Template", "Difference"]:
+            with gzip.open(io.BytesIO(packet[f"cutout{im_type}"]["stampData"]), "rb") as f:
+                with fits.open(io.BytesIO(f.read())) as hdul:
+                    hdul.writeto(f"{output}/{objectId}_{pid}_{im_type}.fits")
+    except Exception as e:
+        logging.exception(e)
 
 def make_dataframe(packet, repeat_obs=True):
-    df = pd.DataFrame(packet["candidate"], index=[0])
-    if repeat_obs:
-        df["ZTF_object_id"] = packet["objectId"]
-        return df[["ZTF_object_id", "jd", "fid", "magpsf", "sigmapsf", "diffmaglim"]]
+    try:
+        df = pd.DataFrame(packet["candidate"], index=[0])
+        if repeat_obs:
+            df["ZTF_object_id"] = packet["objectId"]
+            return df[["ZTF_object_id", "jd", "fid", "magpsf", "sigmapsf", "diffmaglim"]]
 
-    df_prv = pd.DataFrame(packet["prv_candidates"])
-    df_merged = pd.concat([df, df_prv], ignore_index=True)
-    df_merged["ZTF_object_id"] = packet["objectId"]
-    return df_merged[["ZTF_object_id", "jd", "fid", "magpsf", "sigmapsf", "diffmaglim"]]
-
+        df_prv = pd.DataFrame(packet["prv_candidates"])
+        df_merged = pd.concat([df, df_prv], ignore_index=True)
+        df_merged["ZTF_object_id"] = packet["objectId"]
+        return df_merged[["ZTF_object_id", "jd", "fid", "magpsf", "sigmapsf", "diffmaglim"]]
+    except Exception as e:
+        logging.exception(e)
 
 def load_rosat():
     # Open ROSAT catalog
@@ -142,7 +147,7 @@ def not_moving_object(packet):
             if diff_date < (0.5/24):
                 continue
             else:
-                logging.debug(f"Previous detection of {packet['objectId']} {diff_date} days earlier")
+                # logging.debug(f"Previous detection of {packet['objectId']} {diff_date} days earlier")
                 return True
 
     return False
@@ -228,7 +233,7 @@ def ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx):
             return match_result
 
         else:
-            logging.debug(f"{ztf_source['object_id']} ({avro_skycoord.to_string('hmsdms')}) did not match (nearest source {match_result['match_name']}, {match_result['match_sep']:.2f} arcsec away")
+            # logging.debug(f"{ztf_source['object_id']} ({avro_skycoord.to_string('hmsdms')}) did not match (nearest source {match_result['match_name']}, {match_result['match_sep']:.2f} arcsec away")
             return None
     except:
         logging.exception(f"Unable to crossmatch {ztf_source['object_id']} with ROSAT", e)
@@ -276,7 +281,7 @@ def save_to_db(packet, otype, sources_seen, lock_sources_seen, database, interes
     ztf_object_id = packet["objectId"]
     ra = packet["candidate"]["ra"]
     dec = packet["candidate"]["dec"]
-    data_to_update = {"SIMBAD_otype": otype, "ra": packet["candidate"]["ra"],
+    data_to_update = {"SIMBAD_otype": f'"{otype}"', "ra": packet["candidate"]["ra"],
                       "dec": packet["candidate"]["dec"], "SIMBAD_include": interest}
     logging.info(f"Saving new source {ztf_object_id} to database.")
     try:
@@ -293,6 +298,7 @@ def save_to_db(packet, otype, sources_seen, lock_sources_seen, database, interes
             insert_lc_dataframe(conn, dflc)
             logging.debug(f"Successfully ingested lightcurve data from {ztf_object_id} to database.")
             save_cutout_fits(packet, FITS_DIR)
+            logging.debug(f"Successfully saved cutouts of {ztf_object_id}")
             sources_seen.update((ztf_object_id,))
             conn.close()
     except Exception as e:
@@ -319,7 +325,7 @@ def make_lc_dataframe(packet):
     return df_prv[["ZTF_object_id", "jd", "fid", "magpsf", "sigmapsf", "diffmaglim"]]
 
 
-def process_packet(packet, rosat_skycoord, dfx, saved_packets, lock):
+def process_packet(packet, rosat_skycoord, dfx, saved_packets, lock, database):
     
     ztf_source = get_candidate_info(packet)
 
@@ -330,9 +336,14 @@ def process_packet(packet, rosat_skycoord, dfx, saved_packets, lock):
                 logging.debug("adding packet to packets_from_kafka")
                 # packet["match"] = matched_source  # TODO: figure out how to assemble ROSAT + simbad data
                 saved_packets.append(packet)
-                conn = create_connection(database)
-                data_to_insert = {"ZTF_object_id": packet["objectId"], "ROSAT_IAU_NAME": matched_source["IAU_NAME"]}
-                insert_data(conn, "ZTF_objects", data_to_insert)
+                try:
+                    conn = create_connection(database)
+                    data_to_insert = {"ZTF_object_id": packet["objectId"], "ROSAT_IAU_NAME": matched_source["match_name"]}
+                    insert_data(conn, "ZTF_objects", data_to_insert)
+                    logging.debug(f"Successfully saved {packet['objectId']} to database")
+                except Exception as e:
+                    logging.exception(e)
+   
             # if not is_excluded_simbad_class(ztf_source):
             #    ingest_growth_marshal(ztf_source["candid"])
 
@@ -383,7 +394,7 @@ def check_simbad_and_save(packets_to_simbad, lock_packets_to_simbad, sources_see
                 # check if we have a simbad match for each packet we sent
                 if sep2d[i] <= MATCH_RADIUS:
                     matched_row = result_table[idx[i]]
-                    otype = matched_row["TYPE_3"].decode("utf-8")
+                    otype = matched_row["OTYPE_3"].decode("utf-8")
                     simbad_id = matched_row["MAIN_ID"].decode("utf-8")
                     if otype in SIMBAD_EXCLUDES:
                         logging.info(f"{packet['objectId']} found in Simbad as {simbad_id} ({otype}); omitting")
@@ -436,8 +447,9 @@ def main():
     # if not isinstance(args.ingest_growth_marshal, bool):
     #     raise ValueError(f"Ingest growth marshal indicator must be True or False.  Provided {args.ingest_growth_marshal}")
     
-    database = DB_DIR + f"test_sqlite{args.suffix}.db"
-    
+    database = DB_DIR + f"sqlite{args.suffix}.db"
+    logging.debug(f"Database at {database}")
+ 
     kafka_topic = f"ztf_20{args.date}_programid{args.program_id}"
     kafka_server = "partnership.alerts.ztf.uw.edu:9092"
 
@@ -462,14 +474,14 @@ def main():
             loop=loop, bootstrap_servers=kafka_server,
             auto_offset_reset="earliest",
             value_deserializer=read_avro_bytes,
-            group_id=f"uw_xray_{args.suffix}")
+            group_id=f"uw_xray_test_{args.suffix}")
         # Get cluster layout and join group `my-group`
         await consumer.start()
         tstart = time.perf_counter()
         tbatch = tstart
         i=0
         nmod = 1000
-        pool = ""(max_workers=args.threads)
+        pool = ThreadPoolExecutor(max_workers=args.threads)
         packets_from_kafka = []
         packets_to_simbad = []
         try:
@@ -524,7 +536,7 @@ def main():
                 loop.run_in_executor(pool,
                         functools.partial(process_packet,
                             packet, rosat_skycoord, dfx, packets_from_kafka,
-                            lock_packets_from_kafka))
+                            lock_packets_from_kafka, database))
 
         finally:
             # Will leave consumer group; perform autocommit if enabled.

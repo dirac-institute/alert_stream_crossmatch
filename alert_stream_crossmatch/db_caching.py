@@ -24,7 +24,7 @@ def create_connection(db_file):
     try:
         conn = sqlite3.connect(db_file)
     except Error as e:
-        print(e)
+        raise Exception(f"Error creating connection {e}")
 
     return conn
 
@@ -37,7 +37,7 @@ def create_table(conn, create_table_sql):
         cur.execute(create_table_sql)
         cur.close()
     except Error as e:
-        print(e)
+        raise Exception(f"Error creating table {e}")
 
 
 def cache_ZTF_object(conn, ztf_object):
@@ -75,7 +75,7 @@ def insert_data(conn, table, val_dict):
             vals = f"('{vals[0]}')"
         cur.execute(f"INSERT INTO {table}{str(cols)} VALUES {str(vals)}")
     except Error as e:
-        print(e)
+        raise Exception(f"Error inserting data into {table}: {e}")
     conn.commit()
 
 
@@ -99,13 +99,13 @@ def select_ZTF_objects(conn, ztf_object_ids):
         try:
             cur.execute("SELECT * FROM ZTF_objects WHERE ZTF_object_id=?", (ztf_object_ids,))
         except Error as e:
-            print(e)
+            raise Exception(f"Error selection objecs from ZTF_objects {e}")
 
     else:
         try:
             cur.execute("SELECT * FROM ZTF_objects WHERE ZTF_object_id IN {}".format(str(ztf_object_ids)))
         except Error as e:
-            print(e)
+            raise Exception(f"Error selecting all objects from ZTF_objects {e}")
     rows = cur.fetchall()
     df = pd.DataFrame(rows, columns=["ZTF_object_id","SIMBAD_otype","ra","dec","ROSAT_IAU_NAME", "SIMBAD_include"])
     cur.close()
@@ -122,7 +122,7 @@ def get_cached_ids(conn, condition=None):
         else:
             cur.execute(f"SELECT ZTF_object_id FROM ZTF_objects WHERE {condition}")
     except Error as e:
-        print(e)
+        raise Exception(f"Error getting cached ids {e}")
     rows = [x[0] for x in cur.fetchall()]
     ids = pd.Series(rows)
     cur.close()
@@ -143,13 +143,13 @@ def select_all_objects(conn):
 
 def update_value(conn, val_dict, condition, table='ZTF_objects'):
     """Update the value of col with val, for the given conditions
-    Ex. val_dict = {'SIMBAD_otype': 'Sy1'}, condition = 'ZTF_object_id = \"ZTF19abkfpqk\"' """
+    Ex. val_dict = {'SIMBAD_otype': '\"Sy1\"'}, condition = 'ZTF_object_id = \"ZTF19abkfpqk\"' """
     cur = conn.cursor()
     try:
         cur.execute(f"UPDATE {table} SET " + ", ".join([f"{col} = {val_dict[col]}" for col in val_dict.keys()]) +
                     f" WHERE {condition}")
     except Error as e:
-        print(e)
+        raise Exception(f"Error updating values {e}")
     conn.commit()
 
 

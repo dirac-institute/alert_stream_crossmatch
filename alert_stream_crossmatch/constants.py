@@ -6,8 +6,8 @@ import logging.config
 
 BASE_DIR = os.path.dirname(os.path.abspath(inspect.getfile(
                 inspect.currentframe()))) + '/'
-DB_DIR = f"{BASE_DIR}/../local/db"
-FITS_DIR = f"{BASE_DIR}/../local/cutouts"
+DB_DIR = f"{BASE_DIR}../local/db/"
+FITS_DIR = f"{BASE_DIR}../local/cutouts/"
 
 SIMBAD_EXCLUDES = ['G?', 'SC?', 'C?G', 'Gr?', 'As?', 'Y*?', 'pr?', 'TT?', 'Mi?', 'SCG', 'ClG',
 'GrG', 'CGG', 'PaG', 'IG', 'Y*O', 'pr*', 'TT*', 'Or*', 'FU*', 'BY*', 'RS*',
@@ -21,7 +21,7 @@ class UTCFormatter(logging.Formatter):
     """Output logs in UTC"""
     converter = time.gmtime
 
-logging_level = 'INFO'
+logging_level = 'DEBUG'
 
 LOGGING = {
     'version': 1,
