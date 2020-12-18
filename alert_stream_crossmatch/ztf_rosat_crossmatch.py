@@ -28,7 +28,7 @@ import functools
 import requests
 from astropy.io import ascii
 from astroquery.simbad import Simbad
-from .constants import UTCFormatter, LOGGING, BASE_DIR, DB_DIR, SIMBAD_EXCLUDES
+from .constants import UTCFormatter, LOGGING, BASE_DIR, DB_DIR, FITS_DIR, SIMBAD_EXCLUDES
 from .db_caching import create_connection, cache_ZTF_object, select_ZTF_objects, get_cached_ids
 
 # Example command line execution:

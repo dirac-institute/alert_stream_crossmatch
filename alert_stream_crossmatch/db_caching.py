@@ -11,7 +11,9 @@ import inspect
 import pdb
 import sys
 
-DB_DIR = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe()))) + '/'
+# from .constants import DB_DIR
+
+DB_DIR = '../local/db/'
 
 
 def create_connection(db_file):
@@ -181,7 +183,7 @@ def save_cutout(conn, data):
 
 def main():
     # print("arg 1: delete from database, arg 2: suffix for database")
-    database = DB_DIR + 'test_sqlite{}.db'.format(sys.argv[2])
+    database = DB_DIR + 'sqlite{}.db'.format(sys.argv[2])
 
     sql_create_ZTF_objects_table = """CREATE TABLE IF NOT EXISTS ZTF_objects (
                                     ZTF_object_id text,

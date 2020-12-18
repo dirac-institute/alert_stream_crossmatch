@@ -6,8 +6,8 @@ import logging.config
 
 BASE_DIR = os.path.dirname(os.path.abspath(inspect.getfile(
                 inspect.currentframe()))) + '/'
-DB_DIR = f"{BASE_DIR}/local/db"
-FITS_DIR = f"{BASE_DIR}/local/cutouts"
+DB_DIR = f"{BASE_DIR}/../local/db"
+FITS_DIR = f"{BASE_DIR}/../local/cutouts"
 
 SIMBAD_EXCLUDES = ['G?', 'SC?', 'C?G', 'Gr?', 'As?', 'Y*?', 'pr?', 'TT?', 'Mi?', 'SCG', 'ClG',
 'GrG', 'CGG', 'PaG', 'IG', 'Y*O', 'pr*', 'TT*', 'Or*', 'FU*', 'BY*', 'RS*',
