@@ -44,8 +44,6 @@ secrets = ascii.read(BASE_DIR+"secrets.csv", format="csv")
 username_marshal = secrets["marshal_user"][0]
 password_marshal = secrets["marshal_pwd"][0]
 
-# Database of matches
-# database = DB_DIR + "test_sqlite2.db"
 
 def read_avro_file(fname):
     """Reads a single packet from an avro file stored with schema on disk."""
@@ -315,6 +313,7 @@ def check_for_new_sources(packets_to_simbad, sources_seen, lock_sources_seen, da
             old_packets = [packet for packet in packets_to_simbad if packet["objectId"] in sources_seen]
 
             for packet in old_packets:
+                ztf_object_id = packet["objectId"]
                 conn = create_connection(database)
                 dflc = make_dataframe(packet, repeat_obs=True)
                 insert_lc_dataframe(conn, dflc)
