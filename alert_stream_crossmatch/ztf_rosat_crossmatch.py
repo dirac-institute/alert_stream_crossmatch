@@ -40,11 +40,21 @@ from .db_caching import create_connection, cache_ZTF_object, insert_data, update
 SIGMA_TO_95pctCL = 1.95996
 
 # GROWTH marshal credentials
-secrets = ascii.read(BASE_DIR+"secrets.csv", format="csv")
-username_marshal = secrets["marshal_user"][0]
-password_marshal = secrets["marshal_pwd"][0]
+# secrets = ascii.read(BASE_DIR+"secrets.csv", format="csv")
+# username_marshal = secrets["marshal_user"][0]
+# password_marshal = secrets["marshal_pwd"][0]
 
 
+def exception_handler(func):
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            logging.exception(e)
+    return wrapper
+
+
+@exception_handler
 def read_avro_file(fname):
     """Reads a single packet from an avro file stored with schema on disk."""
     with open(fname,"rb") as f:
@@ -53,6 +63,7 @@ def read_avro_file(fname):
             return packet
 
 
+@exception_handler
 def read_avro_bytes(buf):
     """Reads a single packet from an avro file stored with schema on disk."""
     with io.BytesIO(buf) as f:
@@ -61,41 +72,39 @@ def read_avro_bytes(buf):
             return packet
 
 
+@exception_handler
 def get_candidate_info(packet):
 
     return {"ra": packet["candidate"]["ra"], "dec": packet["candidate"]["dec"],
             "object_id": packet["objectId"], "candid": packet["candid"]}
 
 
+@exception_handler
 def save_cutout_fits(packet, output):
     """Save fits cutouts from packed into output."""
-    try:
-        objectId = packet["objectId"]
-        pid = packet["candidate"]["pid"]
-        for im_type in ["Science", "Template", "Difference"]:
-            with gzip.open(io.BytesIO(packet[f"cutout{im_type}"]["stampData"]), "rb") as f:
-                with fits.open(io.BytesIO(f.read())) as hdul:
-                    hdul.writeto(f"{output}/{objectId}_{pid}_{im_type}.fits")
-    except Exception as e:
-        logging.exception(e)
+    objectId = packet["objectId"]
+    pid = packet["candidate"]["pid"]
+    for im_type in ["Science", "Template", "Difference"]:
+        with gzip.open(io.BytesIO(packet[f"cutout{im_type}"]["stampData"]), "rb") as f:
+            with fits.open(io.BytesIO(f.read())) as hdul:
+                hdul.writeto(f"{output}/{objectId}_{pid}_{im_type}.fits")
 
 
+@exception_handler
 def make_dataframe(packet, repeat_obs=True):
     """Extract relevant lightcurve data from packet into pandas DataFrame."""
-    try:
-        df = pd.DataFrame(packet["candidate"], index=[0])
-        if repeat_obs:
-            df["ZTF_object_id"] = packet["objectId"]
-            return df[["ZTF_object_id", "jd", "fid", "magpsf", "sigmapsf", "diffmaglim"]]
+    df = pd.DataFrame(packet["candidate"], index=[0])
+    if repeat_obs:
+        df["ZTF_object_id"] = packet["objectId"]
+        return df[["ZTF_object_id", "jd", "fid", "magpsf", "sigmapsf", "diffmaglim"]]
 
-        df_prv = pd.DataFrame(packet["prv_candidates"])
-        df_merged = pd.concat([df, df_prv], ignore_index=True)
-        df_merged["ZTF_object_id"] = packet["objectId"]
-        return df_merged[["ZTF_object_id", "jd", "fid", "magpsf", "sigmapsf", "diffmaglim"]]
-    except Exception as e:
-        logging.exception(e)
+    df_prv = pd.DataFrame(packet["prv_candidates"])
+    df_merged = pd.concat([df, df_prv], ignore_index=True)
+    df_merged["ZTF_object_id"] = packet["objectId"]
+    return df_merged[["ZTF_object_id", "jd", "fid", "magpsf", "sigmapsf", "diffmaglim"]]
 
 
+@exception_handler
 def load_rosat():
     # Open ROSAT catalog
     rosat_fits = fits.open("/epyc/data/rosat_2rxs/cat2rxs.fits")
@@ -118,6 +127,7 @@ def load_rosat():
     return dfx[["IAU_NAME", "RA_DEG", "DEC_DEG", "err_pos_arcsec"]], rosat_skycoord
 
 
+@exception_handler
 def not_moving_object(packet):
     """Check if there are > 2 detections separated by at least 30 minutes.
 
@@ -131,15 +141,12 @@ def not_moving_object(packet):
     """
 
     date0 = float(packet['candidate']['jd'])
-    try:
-        if packet['prv_candidates'] is None:
-            logging.info("prv_candidates is None")
-            return False
-        if len(packet['prv_candidates']) == 0:
-            logging.debug("No previous detections of {packet['objectId']}")
-            return False
-    except Exception as e:
-        logging.info(e)
+    if packet['prv_candidates'] is None:
+        logging.info("prv_candidates is None")
+        return False
+    if len(packet['prv_candidates']) == 0:
+        logging.debug("No previous detections of {packet['objectId']}")
+        return False
 
     for prv_candidate in packet['prv_candidates']:
         if prv_candidate['candid'] is not None:
@@ -158,6 +165,8 @@ customSimbad=Simbad()
 customSimbad.add_votable_fields("otype(3)")
 customSimbad.add_votable_fields("otypes(3)") # returns a '|' separated list of all the otypes
 
+
+@exception_handler
 def query_simbad(ra,dec):
     sc = SkyCoord(ra,dec,unit=u.degree)
     result_table = customSimbad.query_region(sc, radius=2*u.arcsecond)
@@ -256,6 +265,7 @@ def get_programidx(program_name, username, password):
         return None
 
 
+@exception_handler
 def ingest_growth_marshal(candid):
     """Using ingest_avro_id.cgi to save data to X-ray counterpart programid 14
     """
@@ -269,13 +279,12 @@ def ingest_growth_marshal(candid):
                                     password_marshal),
                               data={"programidx": programid14,
                                     "avroid": candid})
-    try:
-        r.raise_for_status()
-        logging.info(f"Successfully ingested {candid}")
-    except Exception as e:
-        logging.exception(e)
+    r.raise_for_status()
+    logging.info(f"Successfully ingested {candid}")
 
 
+
+@exception_handler
 def save_to_db(packet, otype, sources_seen, lock_sources_seen, database, interest):
     """Save matches to database
     """
@@ -283,55 +292,51 @@ def save_to_db(packet, otype, sources_seen, lock_sources_seen, database, interes
     data_to_update = {"SIMBAD_otype": f'"{otype}"', "ra": packet["candidate"]["ra"],
                       "dec": packet["candidate"]["dec"], "SIMBAD_include": interest}
     logging.info(f"Saving new source {ztf_object_id} to database.")
-    try:
-        with lock_sources_seen:
-            conn = create_connection(database)
-            if ztf_object_id in sources_seen:
-                logging.info(f"{ztf_object_id} already saved in time between simbad check and now")
-                dflc = make_dataframe(packet, repeat_obs=True)
-            else:
-                update_value(conn, data_to_update, f'ZTF_object_id = "{ztf_object_id}"')
-                dflc = make_dataframe(packet, repeat_obs=False)
-                # cache_ZTF_object(conn, (ztf_object_id, simbad_otype, ra, dec, rosat_iau_name))
-                logging.debug(f"Successfully saved new source {ztf_object_id} to database.")
-            insert_lc_dataframe(conn, dflc)
-            logging.debug(f"Successfully ingested lightcurve data from {ztf_object_id} to database.")
-            save_cutout_fits(packet, FITS_DIR)
-            logging.debug(f"Successfully saved cutouts of {ztf_object_id}")
-            sources_seen.update((ztf_object_id,))
-            conn.close()
-    except Exception as e:
-        logging.exception(e)
+
+    with lock_sources_seen:
+        conn = create_connection(database)
+        if ztf_object_id in sources_seen:
+            logging.info(f"{ztf_object_id} already saved in time between simbad check and now")
+            dflc = make_dataframe(packet, repeat_obs=True)
+        else:
+            update_value(conn, data_to_update, f'ZTF_object_id = "{ztf_object_id}"')
+            dflc = make_dataframe(packet, repeat_obs=False)
+            # cache_ZTF_object(conn, (ztf_object_id, simbad_otype, ra, dec, rosat_iau_name))
+            logging.debug(f"Successfully saved new source {ztf_object_id} to database.")
+        insert_lc_dataframe(conn, dflc)
+        logging.debug(f"Successfully ingested lightcurve data from {ztf_object_id} to database.")
+        save_cutout_fits(packet, FITS_DIR)
+        logging.debug(f"Successfully saved cutouts of {ztf_object_id}")
+        sources_seen.update((ztf_object_id,))
+        conn.close()
 
 
+@exception_handler
 def check_for_new_sources(packets_to_simbad, sources_seen, lock_sources_seen, database):
     """Checks the packets_to_simbad for ZTF objects not previously saved to the database.
     """
-    try:
-        with lock_sources_seen:
-            new_packets = [packet for packet in packets_to_simbad if packet["objectId"] not in sources_seen]
-            old_packets = [packet for packet in packets_to_simbad if packet["objectId"] in sources_seen]
+    with lock_sources_seen:
+        new_packets = [packet for packet in packets_to_simbad if packet["objectId"] not in sources_seen]
+        old_packets = [packet for packet in packets_to_simbad if packet["objectId"] in sources_seen]
 
-            for packet in old_packets:
-                ztf_object_id = packet["objectId"]
-                conn = create_connection(database)
-                dflc = make_dataframe(packet, repeat_obs=True)
-                insert_lc_dataframe(conn, dflc)
-                logging.debug(f"Successfully updated lightcurve data from {ztf_object_id} to database.")
-                save_cutout_fits(packet, FITS_DIR)
-                logging.debug(f"Successfully updated cutouts of {ztf_object_id}")
-                conn.close()
-            # sources_seen.update([packet["objectId"] for packet in new_packets])
-        logging.debug("New sources: {}".format(", ".join([packet["objectId"] for packet in new_packets])))
-        if len(new_packets) < len(packets_to_simbad):
-            logging.info(f"{len(packets_to_simbad) - len(new_packets)} seen before")
-
-    except Exception as e:
-        logging.exception(e)
+        for packet in old_packets:
+            ztf_object_id = packet["objectId"]
+            conn = create_connection(database)
+            dflc = make_dataframe(packet, repeat_obs=True)
+            insert_lc_dataframe(conn, dflc)
+            logging.debug(f"Successfully updated lightcurve data from {ztf_object_id} to database.")
+            save_cutout_fits(packet, FITS_DIR)
+            logging.debug(f"Successfully updated cutouts of {ztf_object_id}")
+            conn.close()
+        # sources_seen.update([packet["objectId"] for packet in new_packets])
+    logging.debug("New sources: {}".format(", ".join([packet["objectId"] for packet in new_packets])))
+    if len(new_packets) < len(packets_to_simbad):
+        logging.info(f"{len(packets_to_simbad) - len(new_packets)} seen before")
 
     return new_packets
 
 
+@exception_handler
 def process_packet(packet, rosat_skycoord, dfx, saved_packets, lock, sources_seen, database):
     """Examine packet for matches in the ROSAT database. Save object to database if match found"""
     ztf_source = get_candidate_info(packet)
@@ -349,26 +354,23 @@ def process_packet(packet, rosat_skycoord, dfx, saved_packets, lock, sources_see
                 logging.debug("adding packet to packets_from_kafka")
                 # packet["match"] = matched_source  # TODO: figure out how to assemble ROSAT + simbad data
                 saved_packets.append(packet)
-                try:
-                    data_to_insert = {"ZTF_object_id": packet["objectId"], "ROSAT_IAU_NAME": matched_source["match_name"]}
-                    insert_data(conn, "ZTF_objects", data_to_insert)
-                    logging.debug(f"Successfully saved {packet['objectId']} to database")
-                    conn.close()
-                except Exception as e:
-                    logging.exception(e)
+
+                data_to_insert = {"ZTF_object_id": packet["objectId"], "ROSAT_IAU_NAME": matched_source["match_name"]}
+                insert_data(conn, "ZTF_objects", data_to_insert)
+                logging.debug(f"Successfully saved {packet['objectId']} to database")
+                conn.close()
+
    
             # if not is_excluded_simbad_class(ztf_source):
             #    ingest_growth_marshal(ztf_source["candid"])
 
 
+@exception_handler
 def check_simbad_and_save(packets_to_simbad, lock_packets_to_simbad, sources_seen, lock_sources_seen, database, ingest_GM):
     with lock_packets_to_simbad:
-        try:
-            logging.info("Checking packets for new sources")
-            new_packets_to_simbad = check_for_new_sources(packets_to_simbad, sources_seen, lock_sources_seen, database)
-            logging.debug(f"{len(packets_to_simbad) - len(new_packets_to_simbad)} sources already cached.")
-        except Exception as e:
-            logging.exception(e)
+        logging.info("Checking packets for new sources")
+        new_packets_to_simbad = check_for_new_sources(packets_to_simbad, sources_seen, lock_sources_seen, database)
+        logging.debug(f"{len(packets_to_simbad) - len(new_packets_to_simbad)} sources already cached.")
 
         # Return if sources were previously seen and recorded
         if len(new_packets_to_simbad) == 0:
@@ -391,7 +393,7 @@ def check_simbad_and_save(packets_to_simbad, lock_packets_to_simbad, sources_see
             # to re-match it to our packets
             if result_table is not None:
                 sc_simbad = SkyCoord(result_table["RA"], result_table["DEC"],
-                        unit=("hourangle","degree"))
+                                     unit=("hourangle","degree"))
                 idx, sep2d, _ = match_coordinates_sky(sc, sc_simbad)
                 # assert(len(sc) == len(idx))
             else:
@@ -401,31 +403,29 @@ def check_simbad_and_save(packets_to_simbad, lock_packets_to_simbad, sources_see
         except Exception as e:
             logging.exception("Error querying Simbad",e)
 
-
-        try:
-            for i, packet in enumerate(new_packets_to_simbad):
-                # check if we have a simbad match for each packet we sent
-                if sep2d[i] <= MATCH_RADIUS:
-                    matched_row = result_table[idx[i]]
-                    otype = matched_row["OTYPE_3"].decode("utf-8")
-                    simbad_id = matched_row["MAIN_ID"].decode("utf-8")
-                    if otype in SIMBAD_EXCLUDES:
-                        logging.info(f"{packet['objectId']} found in Simbad as {simbad_id} ({otype}); omitting")
-                        save_to_db(packet, otype, sources_seen, lock_sources_seen, database, interest=0)
-                    else:
-                        logging.info(f"{packet['objectId']} found in Simbad as {simbad_id} ({otype}); saving")
-                        save_to_db(packet, otype, sources_seen, lock_sources_seen, database, interest=1)
-                        if ingest_GM:
-                            ingest_growth_marshal(packet['candid'])
+        for i, packet in enumerate(new_packets_to_simbad):
+            # check if we have a simbad match for each packet we sent
+            if sep2d[i] <= MATCH_RADIUS:
+                matched_row = result_table[idx[i]]
+                otype = matched_row["OTYPE_3"].decode("utf-8")
+                simbad_id = matched_row["MAIN_ID"].decode("utf-8")
+                if otype in SIMBAD_EXCLUDES:
+                    logging.info(f"{packet['objectId']} found in Simbad as {simbad_id} ({otype}); omitting")
+                    save_to_db(packet, otype, sources_seen, lock_sources_seen, database, interest=0)
                 else:
-                    # no match in simbad,
-                    logging.info(f"{packet['objectId']} not found in Simbad")
-                    save_to_db(packet, None, sources_seen, lock_sources_seen, database, interest=0)
+                    logging.info(f"{packet['objectId']} found in Simbad as {simbad_id} ({otype}); saving")
+                    save_to_db(packet, otype, sources_seen, lock_sources_seen, database, interest=1)
                     if ingest_GM:
                         ingest_growth_marshal(packet['candid'])
-        except Exception as e:
-            logging.exception(e)
+            else:
+                # no match in simbad,
+                logging.info(f"{packet['objectId']} not found in Simbad")
+                save_to_db(packet, None, sources_seen, lock_sources_seen, database, interest=0)
+                if ingest_GM:
+                    ingest_growth_marshal(packet['candid'])
 
+
+@exception_handler
 def str2bool(v):
     if isinstance(v, bool):
         return v
