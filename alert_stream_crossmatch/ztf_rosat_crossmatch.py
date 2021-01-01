@@ -236,7 +236,7 @@ def ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx):
         else:
             # logging.debug(f"{ztf_source['object_id']} ({avro_skycoord.to_string('hmsdms')}) did not match (nearest source {match_result['match_name']}, {match_result['match_sep']:.2f} arcsec away")
             return None
-    except:
+    except Exception as e:
         logging.exception(f"Unable to crossmatch {ztf_source['object_id']} with ROSAT", e)
 
 
