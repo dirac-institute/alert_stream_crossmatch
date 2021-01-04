@@ -341,18 +341,18 @@ def process_packet(packet, rosat_skycoord, dfx, saved_packets, lock, sources_see
     """Examine packet for matches in the ROSAT database. Save object to database if match found"""
     ztf_source = get_candidate_info(packet)
     conn = create_connection(database)
-    if packet["objectId"] in sources_seen:
-        logging.debug(f"{packet['objectId']} already known match, adding packet to packets_from_kafka")
-        saved_packets.append(packet)
-        conn.close()
-        return
 
-    matched_source = ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx)
-    if matched_source is not None:
-        if not_moving_object(packet):
+    if packet["objectId"] in sources_seen:
+        with lock:
+            logging.debug(f"{packet['objectId']} already known match, adding packet to packets_from_kafka")
+            saved_packets.append(packet)
+            conn.close()
+
+    else:
+        matched_source = ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx)
+        if (matched_source is not None) and not_moving_object(packet):
             with lock:
                 logging.debug("adding packet to packets_from_kafka")
-                # packet["match"] = matched_source  # TODO: figure out how to assemble ROSAT + simbad data
                 saved_packets.append(packet)
 
                 data_to_insert = {"ZTF_object_id": packet["objectId"], "ROSAT_IAU_NAME": matched_source["match_name"]}
@@ -360,9 +360,7 @@ def process_packet(packet, rosat_skycoord, dfx, saved_packets, lock, sources_see
                 logging.debug(f"Successfully saved {packet['objectId']} to database")
                 conn.close()
 
-   
-            # if not is_excluded_simbad_class(ztf_source):
-            #    ingest_growth_marshal(ztf_source["candid"])
+    logging.debug(f"Total of {len(saved_packets)} saved for query.")
 
 
 @exception_handler
@@ -526,7 +524,7 @@ def main():
                         with lock_packets_to_simbad:
                             logging.debug("copying {} packets from kafka to simbad".format(len(packets_from_kafka)))
                             packets_to_simbad = deepcopy(packets_from_kafka)
-                            packets_from_kafka=[]
+                            packets_from_kafka = []
                     if len(packets_to_simbad) > 0:
                         logging.debug(f"{len(packets_to_simbad)} packets to query")
                         loop.run_in_executor(pool,
