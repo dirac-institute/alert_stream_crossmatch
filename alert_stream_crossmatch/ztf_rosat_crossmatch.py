@@ -312,26 +312,27 @@ def save_to_db(packet, otype, sources_seen, lock_sources_seen, database, interes
 
 
 @exception_handler
-def check_for_new_sources(packets_to_simbad, sources_seen, lock_sources_seen, database):
+def check_for_new_sources(packets_to_simbad, lock_packets_to_simbad, sources_seen, lock_sources_seen, database):
     """Checks the packets_to_simbad for ZTF objects not previously saved to the database.
     """
     with lock_sources_seen:
-        new_packets = [packet for packet in packets_to_simbad if packet["objectId"] not in sources_seen]
-        old_packets = [packet for packet in packets_to_simbad if packet["objectId"] in sources_seen]
+        with lock_packets_to_simbad:
+            new_packets = [packet for packet in packets_to_simbad if packet["objectId"] not in sources_seen]
+            old_packets = [packet for packet in packets_to_simbad if packet["objectId"] in sources_seen]
 
-        for packet in old_packets:
-            ztf_object_id = packet["objectId"]
-            conn = create_connection(database)
-            dflc = make_dataframe(packet, repeat_obs=True)
-            insert_lc_dataframe(conn, dflc)
-            logging.debug(f"Successfully updated lightcurve data from {ztf_object_id} to database.")
-            save_cutout_fits(packet, FITS_DIR)
-            logging.debug(f"Successfully updated cutouts of {ztf_object_id}")
-            conn.close()
-        # sources_seen.update([packet["objectId"] for packet in new_packets])
-    logging.debug("New sources: {}".format(", ".join([packet["objectId"] for packet in new_packets])))
-    if len(new_packets) < len(packets_to_simbad):
-        logging.info(f"{len(packets_to_simbad) - len(new_packets)} seen before")
+            logging.debug("New sources: {}".format(", ".join([packet["objectId"] for packet in new_packets])))
+            if len(new_packets) < len(packets_to_simbad):
+                logging.info(f"{len(packets_to_simbad) - len(new_packets)} seen before")
+
+    for packet in old_packets:
+        ztf_object_id = packet["objectId"]
+        conn = create_connection(database)
+        dflc = make_dataframe(packet, repeat_obs=True)
+        insert_lc_dataframe(conn, dflc)
+        logging.debug(f"Successfully updated lightcurve data from {ztf_object_id} to database.")
+        save_cutout_fits(packet, FITS_DIR)
+        logging.debug(f"Successfully updated cutouts of {ztf_object_id}")
+        conn.close()
 
     return new_packets
 
@@ -364,7 +365,8 @@ def process_packet(packet, rosat_skycoord, dfx, saved_packets, lock, sources_see
 def check_simbad_and_save(packets_to_simbad, lock_packets_to_simbad, sources_seen, lock_sources_seen, database, ingest_GM):
     with lock_packets_to_simbad:
         logging.info("Checking packets for new sources")
-        new_packets_to_simbad = check_for_new_sources(packets_to_simbad, sources_seen, lock_sources_seen, database)
+        new_packets_to_simbad = check_for_new_sources(packets_to_simbad, lock_packets_to_simbad, sources_seen,
+                                                      lock_sources_seen, database)
         logging.debug(f"{len(packets_to_simbad) - len(new_packets_to_simbad)} sources already cached.")
 
         # Return if sources were previously seen and recorded
