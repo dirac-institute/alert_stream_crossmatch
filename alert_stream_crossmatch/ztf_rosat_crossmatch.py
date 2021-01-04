@@ -341,17 +341,15 @@ def process_packet(packet, rosat_skycoord, dfx, saved_packets, lock, sources_see
     """Examine packet for matches in the ROSAT database. Save object to database if match found"""
     ztf_source = get_candidate_info(packet)
     conn = create_connection(database)
-
-    if packet["objectId"] in sources_seen:
-        with lock:
+    with lock:
+        if packet["objectId"] in sources_seen:
             logging.debug(f"{packet['objectId']} already known match, adding packet to packets_from_kafka")
             saved_packets.append(packet)
             conn.close()
-
-    else:
-        matched_source = ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx)
-        if (matched_source is not None) and not_moving_object(packet):
-            with lock:
+            logging.debug(f"Total of {len(saved_packets)} saved for query.")
+        else:
+            matched_source = ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx)
+            if (matched_source is not None) and not_moving_object(packet):
                 logging.debug("adding packet to packets_from_kafka")
                 saved_packets.append(packet)
 
@@ -359,8 +357,7 @@ def process_packet(packet, rosat_skycoord, dfx, saved_packets, lock, sources_see
                 insert_data(conn, "ZTF_objects", data_to_insert)
                 logging.debug(f"Successfully saved {packet['objectId']} to database")
                 conn.close()
-
-    logging.debug(f"Total of {len(saved_packets)} saved for query.")
+                logging.debug(f"Total of {len(saved_packets)} saved for query.")
 
 
 @exception_handler
@@ -483,7 +480,7 @@ def main():
             loop=loop, bootstrap_servers=kafka_server,
             auto_offset_reset="earliest",
             value_deserializer=read_avro_bytes,
-            group_id=f"uw_xray_test_{args.suffix}")
+            group_id=f"uw_xray_{args.suffix}")
         # Get cluster layout and join group `my-group`
         await consumer.start()
         tstart = time.perf_counter()
