@@ -384,8 +384,6 @@ def main():
     if args.program_id not in [1, 2]:
         raise ValueError(f"Program id must be 1 or 2.  Provided {args.program_id}")
 
-    if (args.threads < 1) or (args.threads > 64):
-        raise ValueError(f"threads must be between 1 and 64.  Provided {args.threads}")
 
     database = DB_DIR + f"sqlite{args.suffix}.db"
     logging.debug(f"Database at {database}")
@@ -448,7 +446,7 @@ def main():
                 tbatch = time.perf_counter()
 
             packet = msg.value
-            process_packet(packet, rosat_skycoord, dfx, packets_from_kafka)
+            process_packet(packet, rosat_skycoord, dfx, packets_from_kafka, sources_seen, database)
 
     except Exception as e:
         logging.exception(e)
