@@ -39,11 +39,6 @@ from .db_caching import create_connection, cache_ZTF_object, insert_data, update
 
 SIGMA_TO_95pctCL = 1.95996
 
-# GROWTH marshal credentials
-# secrets = ascii.read(BASE_DIR+"secrets.csv", format="csv")
-# username_marshal = secrets["marshal_user"][0]
-# password_marshal = secrets["marshal_pwd"][0]
-
 
 def exception_handler(func):
     def wrapper(*args, **kwargs):
@@ -249,41 +244,6 @@ def ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx):
         logging.exception(f"Unable to crossmatch {ztf_source['object_id']} with ROSAT", e)
 
 
-def get_programidx(program_name, username, password):
-    """Given a marshal science program name, it returns its programidx"""
-
-    r = requests.post("http://skipper.caltech.edu:8080/cgi-bin/growth/list_programs.cgi",
-                      auth=(username, password))
-    programs = r.json()
-    program_dict = {p["name"]: p["programidx"] for p in programs}
-
-    try:
-        return program_dict[program_name]
-    except KeyError:
-        print(f"The user {username} does not have access to the program \
-              {program_name}")
-        return None
-
-
-@exception_handler
-def ingest_growth_marshal(candid):
-    """Using ingest_avro_id.cgi to save data to X-ray counterpart programid 14
-    """
-
-    # Get programidx
-    #programid14 = get_programidx("X-ray Counterparts", username_marshal, password_marshal)
-    programid14 = 14
-    logging.debug(f"ingesting {candid} to the growth marshal")
-    r = requests.post("http://skipper.caltech.edu:8080/cgi-bin/growth/ingest_avro_id.cgi",
-                              auth=(username_marshal,
-                                    password_marshal),
-                              data={"programidx": programid14,
-                                    "avroid": candid})
-    r.raise_for_status()
-    logging.info(f"Successfully ingested {candid}")
-
-
-
 @exception_handler
 def save_to_db(packet, otype, sources_seen, lock_sources_seen, database, interest):
     """Save matches to database
@@ -362,7 +322,7 @@ def process_packet(packet, rosat_skycoord, dfx, saved_packets, lock, sources_see
 
 
 @exception_handler
-def check_simbad_and_save(packets_to_simbad, lock_packets_to_simbad, sources_seen, lock_sources_seen, database, ingest_GM):
+def check_simbad_and_save(packets_to_simbad, lock_packets_to_simbad, sources_seen, lock_sources_seen, database):
     with lock_packets_to_simbad:
         logging.info("Checking packets for new sources")
         new_packets_to_simbad = check_for_new_sources(packets_to_simbad, lock_packets_to_simbad, sources_seen,
@@ -412,34 +372,17 @@ def check_simbad_and_save(packets_to_simbad, lock_packets_to_simbad, sources_see
                 else:
                     logging.info(f"{packet['objectId']} found in Simbad as {simbad_id} ({otype}); saving")
                     save_to_db(packet, otype, sources_seen, lock_sources_seen, database, interest=1)
-                    if ingest_GM:
-                        ingest_growth_marshal(packet['candid'])
+
             else:
                 # no match in simbad,
                 logging.info(f"{packet['objectId']} not found in Simbad")
                 save_to_db(packet, None, sources_seen, lock_sources_seen, database, interest=0)
-                if ingest_GM:
-                    ingest_growth_marshal(packet['candid'])
-
-
-@exception_handler
-def str2bool(v):
-    if isinstance(v, bool):
-        return v
-    if v.lower() in ("yes", "true", "t", "y", "1"):
-        return True
-    if v.lower() in ("no", "false", "f", "n", "0"):
-        return False
-    else:
-        raise argparse.ArgumentTypeError("Boolean value expected")
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("date", type=str, help="UTC date as YYMMDD")
     parser.add_argument("program_id", type=int, help="Program ID (1 or 2)")
-    # parser.add_argument("--ingest_growth_marshal", type=str2bool, default=False, nargs="?",
-    #                    const=True, help="Save data to X-ray Counterparts (True/False)")
     parser.add_argument("threads", type=int, help="Number of threads (1 to 64)")
     parser.add_argument("suffix", type=str, help="suffix of db")
 
@@ -453,10 +396,7 @@ def main():
  
     if (args.threads < 1) or (args.threads > 64):
         raise ValueError(f"threads must be between 1 and 64.  Provided {args.threads}")
- 
-    # if not isinstance(args.ingest_growth_marshal, bool):
-    #     raise ValueError(f"Ingest growth marshal indicator must be True or False.  Provided {args.ingest_growth_marshal}")
-    
+
     database = DB_DIR + f"sqlite{args.suffix}.db"
     logging.debug(f"Database at {database}")
  
@@ -467,7 +407,7 @@ def main():
     LOGGING["handlers"]["logfile"]["filename"] = f"{BASE_DIR}/../logs/{kafka_topic}_{now}.log"
     logging.config.dictConfig(LOGGING)
     
-    logging.debug(f"Args parsed and validated: {args.date}, {args.program_id}") #, {args.ingest_growth_marshal}")    
+    logging.debug(f"Args parsed and validated: {args.date}, {args.program_id}")
 
     # load X-ray catalogs
     dfx, rosat_skycoord = load_rosat()
@@ -532,8 +472,7 @@ def main():
                                 lock_packets_to_simbad,
                                 sources_seen,
                                 lock_sources_seen,
-                                database,
-                                False)) # args.ingest_growth_marshal))
+                                database)
                     tbatch = time.perf_counter()
 
                 #print("consumed: ", msg.topic, msg.partition, msg.offset,
