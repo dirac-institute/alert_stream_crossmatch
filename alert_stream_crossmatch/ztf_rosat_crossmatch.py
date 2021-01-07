@@ -472,7 +472,7 @@ def main():
                                 lock_packets_to_simbad,
                                 sources_seen,
                                 lock_sources_seen,
-                                database)
+                                database))
                     tbatch = time.perf_counter()
 
                 #print("consumed: ", msg.topic, msg.partition, msg.offset,
