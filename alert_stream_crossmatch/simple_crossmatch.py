@@ -240,7 +240,7 @@ def ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx):
 
 
 @exception_handler
-def save_to_db(packet, otype, sources_seen, database, interest):
+def save_to_db(packet, otype, sources_saved, database, interest):
     """Save matches to database
     """
     ztf_object_id = packet["objectId"]
@@ -249,7 +249,7 @@ def save_to_db(packet, otype, sources_seen, database, interest):
     logging.info(f"Saving new source {ztf_object_id} to database.")
 
     conn = create_connection(database)
-    if ztf_object_id in sources_seen:
+    if ztf_object_id in sources_saved:
         logging.info(f"{ztf_object_id} already saved in time between simbad check and now")
         dflc = make_dataframe(packet, repeat_obs=True)
     else:
@@ -261,16 +261,16 @@ def save_to_db(packet, otype, sources_seen, database, interest):
     logging.debug(f"Successfully ingested lightcurve data from {ztf_object_id} to database.")
     save_cutout_fits(packet, FITS_DIR)
     logging.debug(f"Successfully saved cutouts of {ztf_object_id}")
-    sources_seen.update((ztf_object_id,))
+    sources_saved.update((ztf_object_id,))
     conn.close()
 
 
 @exception_handler
-def check_for_new_sources(packets_to_simbad, sources_seen, database):
+def check_for_new_sources(packets_to_simbad, sources_saved, database):
     """Checks the packets_to_simbad for ZTF objects not previously saved to the database.
     """
-    new_packets = [packet for packet in packets_to_simbad if packet["objectId"] not in sources_seen]
-    old_packets = [packet for packet in packets_to_simbad if packet["objectId"] in sources_seen]
+    new_packets = [packet for packet in packets_to_simbad if packet["objectId"] not in sources_saved]
+    old_packets = [packet for packet in packets_to_simbad if packet["objectId"] in sources_saved]
 
     logging.debug("New sources: {}".format(", ".join([packet["objectId"] for packet in new_packets])))
     if len(new_packets) < len(packets_to_simbad):
@@ -290,11 +290,11 @@ def check_for_new_sources(packets_to_simbad, sources_seen, database):
 
 
 @exception_handler
-def process_packet(packet, rosat_skycoord, dfx, saved_packets, sources_seen, database):
+def process_packet(packet, rosat_skycoord, dfx, saved_packets, sources_saved, database):
     """Examine packet for matches in the ROSAT database. Save object to database if match found"""
     ztf_source = get_candidate_info(packet)
     conn = create_connection(database)
-    if packet["objectId"] in sources_seen:
+    if packet["objectId"] in sources_saved:
         logging.debug(f"{packet['objectId']} already known match, adding packet to packets_from_kafka")
         saved_packets.append(packet)
         conn.close()
@@ -313,9 +313,9 @@ def process_packet(packet, rosat_skycoord, dfx, saved_packets, sources_seen, dat
 
 
 @exception_handler
-def check_simbad_and_save(packets_to_simbad, sources_seen, database):
+def check_simbad_and_save(packets_to_simbad, sources_saved, database):
     logging.info("Checking packets for new sources")
-    new_packets_to_simbad = check_for_new_sources(packets_to_simbad, sources_seen, database)
+    new_packets_to_simbad = check_for_new_sources(packets_to_simbad, sources_saved, database)
     logging.debug(f"{len(packets_to_simbad) - len(new_packets_to_simbad)} sources already cached.")
 
     # Return if sources were previously seen and recorded
@@ -361,15 +361,15 @@ def check_simbad_and_save(packets_to_simbad, sources_seen, database):
             simbad_id = matched_row["MAIN_ID"].decode("utf-8")
             if otype in SIMBAD_EXCLUDES:
                 logging.info(f"{packet['objectId']} found in Simbad as {simbad_id} ({otype}); omitting")
-                save_to_db(packet, otype, sources_seen, database, interest=0)
+                save_to_db(packet, otype, sources_saved, database, interest=0)
             else:
                 logging.info(f"{packet['objectId']} found in Simbad as {simbad_id} ({otype}); saving")
-                save_to_db(packet, otype, sources_seen, database, interest=1)
+                save_to_db(packet, otype, sources_saved, database, interest=1)
 
         else:
             # no match in simbad,
             logging.info(f"{packet['objectId']} not found in Simbad")
-            save_to_db(packet, None, sources_seen, database, interest=0)
+            save_to_db(packet, None, sources_saved, database, interest=0)
 
 
 def main():
@@ -420,9 +420,9 @@ def main():
     packets_from_kafka = []
     packets_to_simbad = []
     conn = create_connection(database)
-    sources_seen = set(get_cached_ids(conn).values)
-    logging.info(f"{len(sources_seen)} sources previously seen")
-    n0_sources = len(sources_seen)
+    sources_saved = set(get_cached_ids(conn).values)
+    logging.info(f"{len(sources_saved)} sources previously seen")
+    n0_sources = len(sources_saved)
     conn.close()
     logging.debug('begin ingesting messages')
     try:
@@ -431,7 +431,7 @@ def main():
             if i % nmod == 0:
                 elapsed = time.perf_counter() - tstart
                 logging.info(f'Consumed {i} messages in {elapsed:.1f} sec ({i / elapsed:.1f} messages/s)')
-                logging.info(f'Matched {len(sources_seen) - n0_sources} sources seen in {elapsed:.1f} sec')
+                logging.info(f'Matched {len(sources_saved) - n0_sources} sources seen in {elapsed:.1f} sec')
 
             # query simbad in batches
             if time.perf_counter() - tbatch >= 40:
@@ -444,11 +444,11 @@ def main():
                     logging.info(f'{len(packets_to_simbad)} packets to query')
                     check_simbad_and_save(
                         packets_to_simbad,
-                        sources_seen, database)
+                        sources_saved, database)
                 tbatch = time.perf_counter()
 
             packet = msg.value
-            process_packet(packet, rosat_skycoord, dfx, packets_from_kafka, sources_seen, database)
+            process_packet(packet, rosat_skycoord, dfx, packets_from_kafka, sources_saved, database)
 
     except Exception as e:
         logging.exception(e)

@@ -245,7 +245,7 @@ def ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx):
 
 
 @exception_handler
-def save_to_db(packet, otype, sources_seen, lock_sources_seen, database, interest):
+def save_to_db(packet, otype, sources_saved, lock_sources_saved, database, interest):
     """Save matches to database
     """
     ztf_object_id = packet["objectId"]
@@ -253,9 +253,9 @@ def save_to_db(packet, otype, sources_seen, lock_sources_seen, database, interes
                       "dec": packet["candidate"]["dec"], "SIMBAD_include": interest}
     logging.info(f"Saving new source {ztf_object_id} to database.")
 
-    with lock_sources_seen:
+    with lock_sources_saved:
         conn = create_connection(database)
-        if ztf_object_id in sources_seen:
+        if ztf_object_id in sources_saved:
             logging.info(f"{ztf_object_id} already saved in time between simbad check and now")
             dflc = make_dataframe(packet, repeat_obs=True)
         else:
@@ -267,18 +267,18 @@ def save_to_db(packet, otype, sources_seen, lock_sources_seen, database, interes
         logging.debug(f"Successfully ingested lightcurve data from {ztf_object_id} to database.")
         save_cutout_fits(packet, FITS_DIR)
         logging.debug(f"Successfully saved cutouts of {ztf_object_id}")
-        sources_seen.update((ztf_object_id,))
+        sources_saved.update((ztf_object_id,))
         conn.close()
 
 
 @exception_handler
-def check_for_new_sources(packets_to_simbad, sources_seen, lock_sources_seen, database):
+def check_for_new_sources(packets_to_simbad, sources_saved, lock_sources_saved, database):
     """Checks the packets_to_simbad for ZTF objects not previously saved to the database.
     """
     logging.debug(f"Checking for new sources...")
-    with lock_sources_seen:
-        new_packets = [packet for packet in packets_to_simbad if packet["objectId"] not in sources_seen]
-        old_packets = [packet for packet in packets_to_simbad if packet["objectId"] in sources_seen]
+    with lock_sources_saved:
+        new_packets = [packet for packet in packets_to_simbad if packet["objectId"] not in sources_saved]
+        old_packets = [packet for packet in packets_to_simbad if packet["objectId"] in sources_saved]
         logging.debug("New sources: {}".format(", ".join([packet["objectId"] for packet in new_packets])))
         if len(new_packets) < len(packets_to_simbad):
             logging.info(f"{len(packets_to_simbad) - len(new_packets)} seen before")
@@ -298,12 +298,12 @@ def check_for_new_sources(packets_to_simbad, sources_seen, lock_sources_seen, da
 
 
 @exception_handler
-def process_packet(packet, rosat_skycoord, dfx, saved_packets, lock, sources_seen, database):
+def process_packet(packet, rosat_skycoord, dfx, saved_packets, lock, sources_saved, database):
     """Examine packet for matches in the ROSAT database. Save object to database if match found"""
     ztf_source = get_candidate_info(packet)
     # conn = create_connection(database)
     with lock:
-        if packet["objectId"] in sources_seen:
+        if packet["objectId"] in sources_saved:
             # logging.debug(f"{packet['objectId']} already known match, adding packet to packets_from_kafka")
             saved_packets.append(packet)
             # conn.close()
@@ -322,11 +322,11 @@ def process_packet(packet, rosat_skycoord, dfx, saved_packets, lock, sources_see
 
 
 @exception_handler
-def check_simbad_and_save(packets_to_simbad, lock_packets_to_simbad, sources_seen, lock_sources_seen, database):
+def check_simbad_and_save(packets_to_simbad, lock_packets_to_simbad, sources_saved, lock_sources_saved, database):
     with lock_packets_to_simbad:
         logging.info("Checking packets for new sources")
-        new_packets_to_simbad = check_for_new_sources(packets_to_simbad, sources_seen,
-                                                      lock_sources_seen, database)
+        new_packets_to_simbad = check_for_new_sources(packets_to_simbad, sources_saved,
+                                                      lock_sources_saved, database)
         logging.debug(f"{len(packets_to_simbad) - len(new_packets_to_simbad)} sources already cached.")
 
         # Return if sources were previously seen and recorded
@@ -368,15 +368,15 @@ def check_simbad_and_save(packets_to_simbad, lock_packets_to_simbad, sources_see
                 simbad_id = matched_row["MAIN_ID"].decode("utf-8")
                 if otype in SIMBAD_EXCLUDES:
                     logging.info(f"{packet['objectId']} found in Simbad as {simbad_id} ({otype}); omitting")
-                    save_to_db(packet, otype, sources_seen, lock_sources_seen, database, interest=0)
+                    save_to_db(packet, otype, sources_saved, lock_sources_saved, database, interest=0)
                 else:
                     logging.info(f"{packet['objectId']} found in Simbad as {simbad_id} ({otype}); saving")
-                    save_to_db(packet, otype, sources_seen, lock_sources_seen, database, interest=1)
+                    save_to_db(packet, otype, sources_saved, lock_sources_saved, database, interest=1)
 
             else:
                 # no match in simbad,
                 logging.info(f"{packet['objectId']} not found in Simbad")
-                save_to_db(packet, None, sources_seen, lock_sources_seen, database, interest=0)
+                save_to_db(packet, None, sources_saved, lock_sources_saved, database, interest=0)
 
 
 def main():
@@ -437,13 +437,13 @@ def main():
         except Exception as e:
             logging.exception(f"Could not connect to {database}", e)
             return
-        sources_seen = set(get_cached_ids(conn).values)
-        logging.info(f"{len(sources_seen)} sources previously seen")
-        n0_sources = len(sources_seen)
+        sources_saved = set(get_cached_ids(conn).values)
+        logging.info(f"{len(sources_saved)} sources previously seen")
+        n0_sources = len(sources_saved)
         conn.close()
         lock_packets_from_kafka = Lock()
         lock_packets_to_simbad = Lock()
-        lock_sources_seen = Lock()
+        lock_sources_saved = Lock()
         logging.debug("begin ingesting messages")
         try:
             # Consume messages
@@ -452,8 +452,8 @@ def main():
                 if i % nmod  == 0:
                     elapsed = time.perf_counter() - tstart
                     logging.info(f"Consumed {i} messages in {elapsed:.1f} sec ({i/elapsed:.1f} messages/s)")
-                    with lock_sources_seen:
-                        logging.info(f"Matched {len(sources_seen) - n0_sources} sources seen in {elapsed:.1f} sec")
+                    with lock_sources_saved:
+                        logging.info(f"Matched {len(sources_saved) - n0_sources} sources seen in {elapsed:.1f} sec")
 
 
 
@@ -470,8 +470,8 @@ def main():
                             functools.partial(check_simbad_and_save,
                                 packets_to_simbad,
                                 lock_packets_to_simbad,
-                                sources_seen,
-                                lock_sources_seen,
+                                sources_saved,
+                                lock_sources_saved,
                                 database))
                     tbatch = time.perf_counter()
 
@@ -483,7 +483,7 @@ def main():
                 loop.run_in_executor(pool,
                         functools.partial(process_packet,
                             packet, rosat_skycoord, dfx, packets_from_kafka,
-                            lock_packets_from_kafka, sources_seen, database))
+                            lock_packets_from_kafka, sources_saved, database))
 
         finally:
             # Will leave consumer group; perform autocommit if enabled.
