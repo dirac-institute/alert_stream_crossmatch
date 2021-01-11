@@ -157,18 +157,6 @@ def insert_lc_dataframe(conn, df):
     df.to_sql('lightcurves', conn, if_exists='append', index=False)
 
 
-def save_cutout(conn, data):
-    ztf_object_id = data['objectId']
-    jd = data['candidate']['jd']
-    cutout_science = data['cutoutScience']['stampData']
-    cutout_difference = data['cutoutDifference']['stampData']
-    cutout_template = data['cutoutTemplate']['stampData']
-    cur = conn.cursor()
-    cur.execute(f"""INSERT INTO cutouts(ZTF_object_id, jd, cutout_science, cutout_template, cutout_difference) 
-                    VALUES (?,?,?);""", (ztf_object_id, jd, cutout_science, cutout_template, cutout_difference))
-    conn.commit()
-
-
 def main():
     # print("arg 1: delete from database, arg 2: suffix for database")
     database = DB_DIR + 'sqlite{}.db'.format(sys.argv[2])
@@ -188,17 +176,12 @@ def main():
                                     fid text,
                                     magpsf float,
                                     sigmapsf float,
-                                    diffmaglim float
+                                    diffmaglim float,
+                                    isdiffpos, text,
+                                    magnr, float,
+                                    sigmagnr, float
+                                    
                                 );"""
-
-    sql_create_cutouts_table = """CREATE TABLE IF NOT EXISTS cutouts (
-                                    ZTF_object_id text,
-                                    jd text,
-                                    cutout_science blob,
-                                    cutout_template blob,
-                                    cutout_difference blob
-                                );"""
-
 
     # create a database connection
     conn = create_connection(database)
@@ -208,7 +191,6 @@ def main():
         # create tasks table
         create_table(conn, sql_create_ZTF_objects_table)
         create_table(conn, sql_create_lightcurves_table)
-        create_table(conn, sql_create_cutouts_table)
     else:
         print("Error! cannot create the database connection.")
 
@@ -218,8 +200,6 @@ def main():
         cur.close()
 
     print("Connected to database")
-    df = select_all_objects(conn)
-    pdb.set_trace()
     conn.close()
 
 if __name__ == '__main__':
