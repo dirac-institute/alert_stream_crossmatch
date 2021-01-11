@@ -453,4 +453,5 @@ def main():
     finally:
         # Will leave consumer group; perform autocommit if enabled.
         consumer.close()
+        logging.info(f"finished consuming all packets in {kafka_server}")
         # TODO: flush out saved packets
