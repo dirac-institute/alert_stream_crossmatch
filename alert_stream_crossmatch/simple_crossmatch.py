@@ -290,13 +290,14 @@ def check_for_new_sources(packets_to_simbad, sources_saved, database):
 
 
 @exception_handler
-def process_packet(packet, rosat_skycoord, dfx, saved_packets, sources_saved, database):
+def process_packet(packet, rosat_skycoord, dfx, saved_packets, sources_seen, database):
     """Examine packet for matches in the ROSAT database. Save object to database if match found"""
     ztf_source = get_candidate_info(packet)
     conn = create_connection(database)
-    if packet["objectId"] in sources_saved:
+    if packet["objectId"] in sources_seen:
         logging.debug(f"{packet['objectId']} already known match, adding packet to packets_from_kafka")
         saved_packets.append(packet)
+        sources_seen.update((ztf_source,))
         conn.close()
         logging.debug(f"Total of {len(saved_packets)} saved for query.")
     else:
@@ -304,7 +305,7 @@ def process_packet(packet, rosat_skycoord, dfx, saved_packets, sources_saved, da
         if (matched_source is not None) and not_moving_object(packet):
             logging.debug("adding packet to packets_from_kafka")
             saved_packets.append(packet)
-
+            sources_seen.update((ztf_source,))
             data_to_insert = {"ZTF_object_id": packet["objectId"], "ROSAT_IAU_NAME": matched_source["match_name"]}
             insert_data(conn, "ZTF_objects", data_to_insert)
             logging.debug(f"Successfully saved {packet['objectId']} to database")
@@ -420,7 +421,8 @@ def main():
     packets_from_kafka = []
     packets_to_simbad = []
     conn = create_connection(database)
-    sources_saved = set(get_cached_ids(conn).values)
+    sources_saved = set(get_cached_ids(conn).values)    # These are sources in both tables (ZTF_objects and lightcurves)
+    sources_seen = set(get_cached_ids(conn).values)     # These are sources only in ZTF objects
     logging.info(f"{len(sources_saved)} sources previously seen")
     n0_sources = len(sources_saved)
     conn.close()
@@ -448,7 +450,7 @@ def main():
                 tbatch = time.perf_counter()
 
             packet = msg.value
-            process_packet(packet, rosat_skycoord, dfx, packets_from_kafka, sources_saved, database)
+            process_packet(packet, rosat_skycoord, dfx, packets_from_kafka, sources_seen, database)
 
     except Exception as e:
         logging.exception(e)

@@ -30,8 +30,8 @@ import requests
 from astropy.io import ascii
 from astroquery.simbad import Simbad
 from .constants import UTCFormatter, LOGGING, BASE_DIR, DB_DIR, FITS_DIR, SIMBAD_EXCLUDES
-from .db_caching import create_connection, cache_ZTF_object, insert_data, update_value, insert_lc_dataframe, get_cached_ids
-
+from .db_caching import create_connection, cache_ZTF_object, insert_data, update_value, insert_lc_dataframe, \
+    get_cached_ids
 
 # Example command line execution:
 
@@ -46,13 +46,14 @@ def exception_handler(func):
             return func(*args, **kwargs)
         except Exception as e:
             logging.exception(e)
+
     return wrapper
 
 
 @exception_handler
 def read_avro_file(fname):
     """Reads a single packet from an avro file stored with schema on disk."""
-    with open(fname,"rb") as f:
+    with open(fname, "rb") as f:
         freader = fastavro.reader(f)
         for packet in freader:
             return packet
@@ -69,7 +70,6 @@ def read_avro_bytes(buf):
 
 @exception_handler
 def get_candidate_info(packet):
-
     return {"ra": packet["candidate"]["ra"], "dec": packet["candidate"]["dec"],
             "object_id": packet["objectId"], "candid": packet["candid"]}
 
@@ -113,11 +113,11 @@ def load_rosat():
     dfx = dfx[dfx.DEC_DEG >= -30]
 
     # List ROSAT error position [arcsec]
-    dfx["err_pos_arcsec"] = np.sqrt(((dfx.XERR*45)**2.+ (dfx.YERR*45)**2.) + 0.6**2.) * SIGMA_TO_95pctCL
+    dfx["err_pos_arcsec"] = np.sqrt(((dfx.XERR * 45) ** 2. + (dfx.YERR * 45) ** 2.) + 0.6 ** 2.) * SIGMA_TO_95pctCL
 
     # Put ROSAT ra and dec list in SkyCoord [degrees]
     rosat_skycoord = SkyCoord(ra=dfx.RA_DEG, dec=dfx.DEC_DEG,
-            frame="icrs", unit=(u.deg))
+                              frame="icrs", unit=(u.deg))
 
     return dfx[["IAU_NAME", "RA_DEG", "DEC_DEG", "err_pos_arcsec"]], rosat_skycoord
 
@@ -147,7 +147,7 @@ def not_moving_object(packet):
         if prv_candidate['candid'] is not None:
             date1 = float(prv_candidate['jd'])
             diff_date = date0 - date1
-            if diff_date < (0.5/24):
+            if diff_date < (0.5 / 24):
                 continue
             else:
                 # logging.debug(f"Previous detection of {packet['objectId']} {diff_date} days earlier")
@@ -156,15 +156,15 @@ def not_moving_object(packet):
     return False
 
 
-customSimbad=Simbad()
+customSimbad = Simbad()
 customSimbad.add_votable_fields("otype(3)")
-customSimbad.add_votable_fields("otypes(3)") # returns a '|' separated list of all the otypes
+customSimbad.add_votable_fields("otypes(3)")  # returns a '|' separated list of all the otypes
 
 
 @exception_handler
-def query_simbad(ra,dec):
-    sc = SkyCoord(ra,dec,unit=u.degree)
-    result_table = customSimbad.query_region(sc, radius=2*u.arcsecond)
+def query_simbad(ra, dec):
+    sc = SkyCoord(ra, dec, unit=u.degree)
+    result_table = customSimbad.query_region(sc, radius=2 * u.arcsecond)
     return result_table
 
 
@@ -172,10 +172,10 @@ def is_excluded_simbad_class(ztf_source):
     """Is the object in Simbad, with object types we reject (e.g., AGN)?
     """
     try:
-        result_table = query_simbad(ztf_source['ra'],ztf_source['dec'])
+        result_table = query_simbad(ztf_source['ra'], ztf_source['dec'])
         if result_table is None:
             logging.info(f"{ztf_source['object_id']} not found in Simbad")
-            return False # not in Simbad
+            return False  # not in Simbad
         else:
             # for now let's just take the closest match
             otype = result_table['OTYPE_3'][0].decode("utf-8")
@@ -218,7 +218,7 @@ def ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx):
     try:
         # Input avro data ra and dec in SkyCoords
         avro_skycoord = SkyCoord(ra=ztf_source["ra"], dec=ztf_source["dec"],
-                frame="icrs", unit=(u.deg))
+                                 frame="icrs", unit=(u.deg))
 
         # Finds the nearest ROSAT source's coordinates to the avro files ra[deg] and dec[deg]
         match_idx, match_sep2d, _ = avro_skycoord.match_to_catalog_sky(rosat_skycoord)
@@ -234,7 +234,8 @@ def ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx):
                         "match_sep": match_sep2d[0].to(u.arcsecond).value}
 
         if matched:
-            logging.info(f"{ztf_source['object_id']} ({avro_skycoord.to_string('hmsdms')}; {ztf_source['candid']}) matched {match_result['match_name']} ({match_result['match_sep']:.2f} arcsec away)")
+            logging.info(
+                f"{ztf_source['object_id']} ({avro_skycoord.to_string('hmsdms')}; {ztf_source['candid']}) matched {match_result['match_name']} ({match_result['match_sep']:.2f} arcsec away)")
             return match_result
 
         else:
@@ -282,7 +283,7 @@ def check_for_new_sources(packets_to_simbad, sources_saved, lock_sources_saved, 
         logging.debug("New sources: {}".format(", ".join([packet["objectId"] for packet in new_packets])))
         if len(new_packets) < len(packets_to_simbad):
             logging.info(f"{len(packets_to_simbad) - len(new_packets)} seen before")
-    
+
     logging.debug("Updating info for previously seen sources...")
     for packet in old_packets:
         ztf_object_id = packet["objectId"]
@@ -298,27 +299,31 @@ def check_for_new_sources(packets_to_simbad, sources_saved, lock_sources_saved, 
 
 
 @exception_handler
-def process_packet(packet, rosat_skycoord, dfx, saved_packets, lock, sources_saved, database):
+def process_packet(packet, rosat_skycoord, dfx, saved_packets, lock, sources_seen, lock_sources_seen, database):
     """Examine packet for matches in the ROSAT database. Save object to database if match found"""
     ztf_source = get_candidate_info(packet)
     # conn = create_connection(database)
     with lock:
-        if packet["objectId"] in sources_saved:
-            # logging.debug(f"{packet['objectId']} already known match, adding packet to packets_from_kafka")
-            saved_packets.append(packet)
-            # conn.close()
-            logging.debug(f"Total of {len(saved_packets)} saved for query.")
-        else:
-            matched_source = ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx)
-            if (matched_source is not None) and not_moving_object(packet):
-                # logging.debug("adding packet to packets_from_kafka")
+        with lock_sources_seen:
+            if packet["objectId"] in sources_seen:
+                # logging.debug(f"{packet['objectId']} already known match, adding packet to packets_from_kafka")
                 saved_packets.append(packet)
-                conn = create_connection(database)
-                data_to_insert = {"ZTF_object_id": packet["objectId"], "ROSAT_IAU_NAME": matched_source["match_name"]}
-                insert_data(conn, "ZTF_objects", data_to_insert)
-                logging.debug(f"Successfully saved {packet['objectId']} to database")
-                conn.close()
+                sources_seen.update((ztf_source,))
+                # conn.close()
                 logging.debug(f"Total of {len(saved_packets)} saved for query.")
+            else:
+                matched_source = ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx)
+                if (matched_source is not None) and not_moving_object(packet):
+                    # logging.debug("adding packet to packets_from_kafka")
+                    saved_packets.append(packet)
+                    sources_seen.update((ztf_source,))
+                    conn = create_connection(database)
+                    data_to_insert = {"ZTF_object_id": packet["objectId"],
+                                      "ROSAT_IAU_NAME": matched_source["match_name"]}
+                    insert_data(conn, "ZTF_objects", data_to_insert)
+                    logging.debug(f"Successfully saved {packet['objectId']} to database")
+                    conn.close()
+                    logging.debug(f"Total of {len(saved_packets)} saved for query.")
 
 
 @exception_handler
@@ -343,14 +348,14 @@ def check_simbad_and_save(packets_to_simbad, lock_packets_to_simbad, sources_sav
 
         sc = SkyCoord(ras, decs, unit=u.degree)
 
-        MATCH_RADIUS = 2*u.arcsecond
+        MATCH_RADIUS = 2 * u.arcsecond
         try:
-            result_table = customSimbad.query_region(sc, radius=MATCH_RADIUS) # TODO: examine result_table for errors
+            result_table = customSimbad.query_region(sc, radius=MATCH_RADIUS)  # TODO: examine result_table for errors
             # annoyingly, the result table is unsorted and unlabeled, so we have
             # to re-match it to our packets
             if result_table is not None:
                 sc_simbad = SkyCoord(result_table["RA"], result_table["DEC"],
-                                     unit=("hourangle","degree"))
+                                     unit=("hourangle", "degree"))
                 idx, sep2d, _ = match_coordinates_sky(sc, sc_simbad)
                 # assert(len(sc) == len(idx))
             else:
@@ -358,7 +363,7 @@ def check_simbad_and_save(packets_to_simbad, lock_packets_to_simbad, sources_sav
                 return
 
         except Exception as e:
-            logging.exception("Error querying Simbad",e)
+            logging.exception("Error querying Simbad", e)
 
         for i, packet in enumerate(new_packets_to_simbad):
             # check if we have a simbad match for each packet we sent
@@ -391,22 +396,22 @@ def main():
     if len(args.date) != 6:
         raise ValueError(f"Date must be specified as YYMMDD.  Provided {args.date}")
 
-    if args.program_id not in [1,2]:
+    if args.program_id not in [1, 2]:
         raise ValueError(f"Program id must be 1 or 2.  Provided {args.program_id}")
- 
+
     if (args.threads < 1) or (args.threads > 64):
         raise ValueError(f"threads must be between 1 and 64.  Provided {args.threads}")
 
     database = DB_DIR + f"sqlite{args.suffix}.db"
     logging.debug(f"Database at {database}")
- 
+
     kafka_topic = f"ztf_20{args.date}_programid{args.program_id}"
     kafka_server = "partnership.alerts.ztf.uw.edu:9092"
 
-    now = datetime.datetime.now().strftime("%d%m%y_%H%M%S")    
+    now = datetime.datetime.now().strftime("%d%m%y_%H%M%S")
     LOGGING["handlers"]["logfile"]["filename"] = f"{BASE_DIR}/../logs/{kafka_topic}_{now}.log"
     logging.config.dictConfig(LOGGING)
-    
+
     logging.debug(f"Args parsed and validated: {args.date}, {args.program_id}")
 
     # load X-ray catalogs
@@ -418,7 +423,7 @@ def main():
 
     async def consume():
         consumer = AIOKafkaConsumer(
-            kafka_topic, #other_topic,
+            kafka_topic,  # other_topic,
             loop=loop, bootstrap_servers=kafka_server,
             auto_offset_reset="earliest",
             value_deserializer=read_avro_bytes,
@@ -427,7 +432,7 @@ def main():
         await consumer.start()
         tstart = time.perf_counter()
         tbatch = tstart
-        i=0
+        i = 0
         nmod = 1000
         pool = ThreadPoolExecutor(max_workers=args.threads)
         packets_from_kafka = []
@@ -438,24 +443,24 @@ def main():
             logging.exception(f"Could not connect to {database}", e)
             return
         sources_saved = set(get_cached_ids(conn).values)
+        sources_seen = set(get_cached_ids(conn).values)
         logging.info(f"{len(sources_saved)} sources previously seen")
         n0_sources = len(sources_saved)
         conn.close()
         lock_packets_from_kafka = Lock()
         lock_packets_to_simbad = Lock()
         lock_sources_saved = Lock()
+        lock_sources_seen = Lock
         logging.debug("begin ingesting messages")
         try:
             # Consume messages
             async for msg in consumer:
-                i+=1
-                if i % nmod  == 0:
+                i += 1
+                if i % nmod == 0:
                     elapsed = time.perf_counter() - tstart
-                    logging.info(f"Consumed {i} messages in {elapsed:.1f} sec ({i/elapsed:.1f} messages/s)")
+                    logging.info(f"Consumed {i} messages in {elapsed:.1f} sec ({i / elapsed:.1f} messages/s)")
                     with lock_sources_saved:
                         logging.info(f"Matched {len(sources_saved) - n0_sources} sources seen in {elapsed:.1f} sec")
-
-
 
                 # query simbad in batches
                 if time.perf_counter() - tbatch >= 40:
@@ -467,23 +472,24 @@ def main():
                     if len(packets_to_simbad) > 0:
                         logging.debug(f"{len(packets_to_simbad)} packets to query")
                         loop.run_in_executor(pool,
-                            functools.partial(check_simbad_and_save,
-                                packets_to_simbad,
-                                lock_packets_to_simbad,
-                                sources_saved,
-                                lock_sources_saved,
-                                database))
+                                             functools.partial(check_simbad_and_save,
+                                                               packets_to_simbad,
+                                                               lock_packets_to_simbad,
+                                                               sources_saved,
+                                                               lock_sources_saved,
+                                                               database))
                     tbatch = time.perf_counter()
 
-                #print("consumed: ", msg.topic, msg.partition, msg.offset,
+                # print("consumed: ", msg.topic, msg.partition, msg.offset,
                 #      msg.key, msg.timestamp)
 
                 packet = msg.value
 
                 loop.run_in_executor(pool,
-                        functools.partial(process_packet,
-                            packet, rosat_skycoord, dfx, packets_from_kafka,
-                            lock_packets_from_kafka, sources_saved, database))
+                                     functools.partial(process_packet,
+                                                       packet, rosat_skycoord, dfx, packets_from_kafka,
+                                                       lock_packets_from_kafka,
+                                                       sources_seen, lock_sources_seen, database))
 
         finally:
             # Will leave consumer group; perform autocommit if enabled.
