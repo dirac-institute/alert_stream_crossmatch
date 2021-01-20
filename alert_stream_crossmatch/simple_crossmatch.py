@@ -257,10 +257,10 @@ def save_to_db(packet, otype, sources_saved, database, interest):
         dflc = make_dataframe(packet, repeat_obs=False)
         # cache_ZTF_object(conn, (ztf_object_id, simbad_otype, ra, dec, rosat_iau_name))
         logging.debug(f"Successfully saved new source {ztf_object_id} to database.")
+        save_cutout_fits(packet, FITS_DIR)
+        logging.debug(f"Successfully saved cutouts of {ztf_object_id}")
     insert_lc_dataframe(conn, dflc)
     logging.debug(f"Successfully ingested lightcurve data from {ztf_object_id} to database.")
-    save_cutout_fits(packet, FITS_DIR)
-    logging.debug(f"Successfully saved cutouts of {ztf_object_id}")
     sources_saved.update((ztf_object_id,))
     conn.close()
 
@@ -297,7 +297,7 @@ def process_packet(packet, rosat_skycoord, dfx, saved_packets, sources_seen, dat
     if packet["objectId"] in sources_seen:
         logging.debug(f"{packet['objectId']} already known match, adding packet to packets_from_kafka")
         saved_packets.append(packet)
-        sources_seen.update((ztf_source,))
+        sources_seen.update((packet["objectId"],))
         conn.close()
         logging.debug(f"Total of {len(saved_packets)} saved for query.")
     else:
@@ -305,7 +305,7 @@ def process_packet(packet, rosat_skycoord, dfx, saved_packets, sources_seen, dat
         if (matched_source is not None) and not_moving_object(packet):
             logging.debug("adding packet to packets_from_kafka")
             saved_packets.append(packet)
-            sources_seen.update((ztf_source,))
+            sources_seen.update((packet["objectId"],))
             data_to_insert = {"ZTF_object_id": packet["objectId"], "ROSAT_IAU_NAME": matched_source["match_name"]}
             insert_data(conn, "ZTF_objects", data_to_insert)
             logging.debug(f"Successfully saved {packet['objectId']} to database")
@@ -404,14 +404,13 @@ def main():
     dfx, rosat_skycoord = load_rosat()
 
     logging.info(f"Connecting to Kafka topic {kafka_topic}")
-    logging.info(f"Connecting to Kafka topic {kafka_topic}")
 
     consumer = KafkaConsumer(
         kafka_topic,
         bootstrap_servers=kafka_server,
         auto_offset_reset="earliest",
         value_deserializer=read_avro_bytes,
-        group_id="uw_xray_simple",
+        group_id=f"uw_xray_test_{args.suffix}",
         consumer_timeout_ms=30000)
     # Get cluster layout and join group `my-group`
     tstart = time.perf_counter()
@@ -457,5 +456,5 @@ def main():
     finally:
         # Will leave consumer group; perform autocommit if enabled.
         consumer.close()
-        logging.info(f"finished consuming all packets in {kafka_server}")
+        logging.info(f"finished consuming all packets in {kafka_topic} (or otherwise hit 30s time out)")
         # TODO: flush out saved packets

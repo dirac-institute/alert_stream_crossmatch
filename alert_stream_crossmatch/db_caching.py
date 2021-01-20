@@ -177,9 +177,9 @@ def main():
                                     magpsf float,
                                     sigmapsf float,
                                     diffmaglim float,
-                                    isdiffpos, text,
-                                    magnr, float,
-                                    sigmagnr, float
+                                    isdiffpos text,
+                                    magnr float,
+                                    sigmagnr float
                                     
                                 );"""
 
