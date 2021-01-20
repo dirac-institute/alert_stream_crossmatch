@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 import functools
 
 from astroquery.simbad import Simbad
-from .constants import LOGGING, BASE_DIR, DB_DIR, SIMBAD_EXCLUDES, # FITS_DIR
+from .constants import LOGGING, BASE_DIR, DB_DIR, SIMBAD_EXCLUDES # FITS_DIR
 from .db_caching import create_connection, insert_data, update_value, insert_lc_dataframe, get_cached_ids
 
 # Example command line execution:
@@ -303,7 +303,7 @@ def process_packet(packet, rosat_skycoord, dfx, saved_packets, lock, sources_see
             if packet["objectId"] in sources_seen:
                 # logging.debug(f"{packet['objectId']} already known match, adding packet to packets_from_kafka")
                 saved_packets.append(packet)
-                sources_seen.update((ztf_source,))
+                sources_seen.update((packet["objectId"],))
                 # conn.close()
                 logging.debug(f"Total of {len(saved_packets)} saved for query.")
             else:
@@ -311,7 +311,7 @@ def process_packet(packet, rosat_skycoord, dfx, saved_packets, lock, sources_see
                 if (matched_source is not None) and not_moving_object(packet):
                     # logging.debug("adding packet to packets_from_kafka")
                     saved_packets.append(packet)
-                    sources_seen.update((ztf_source,))
+                    sources_seen.update((packet["objectId"],))
                     conn = create_connection(database)
                     data_to_insert = {"ZTF_object_id": packet["objectId"],
                                       "ROSAT_IAU_NAME": matched_source["match_name"]}
@@ -445,7 +445,7 @@ def main():
         lock_packets_from_kafka = Lock()
         lock_packets_to_simbad = Lock()
         lock_sources_saved = Lock()
-        lock_sources_seen = Lock
+        lock_sources_seen = Lock()
         logging.debug("begin ingesting messages")
         try:
             # Consume messages
