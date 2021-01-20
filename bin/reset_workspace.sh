@@ -1,7 +1,6 @@
 #! /bin/bash
 
-local_dir="/epyc/users/ykwang/Github/alert_stream_crossmatch/local"
-cd $local_dir
+cd "../local"
 
 today="$(date +'%Y%m%d')"
 
@@ -14,4 +13,5 @@ mv "cutouts_${today}" old_results/old_cutouts
 mkdir cutouts
 mkdir db
 
-cd -
+cd "../alert_stream_crossmatch"
+python db_caching.py "y" $1 
