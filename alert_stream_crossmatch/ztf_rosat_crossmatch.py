@@ -5,14 +5,11 @@
 
 
 import io
-import glob
 import time
 import datetime
 import argparse
 import logging
-import sys
 import gzip
-import traceback
 from threading import Lock
 from copy import deepcopy
 import numpy as np
@@ -26,19 +23,17 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import functools
 
-import requests
-from astropy.io import ascii
 from astroquery.simbad import Simbad
-from .constants import UTCFormatter, LOGGING, BASE_DIR, DB_DIR, FITS_DIR, SIMBAD_EXCLUDES
-from .db_caching import create_connection, cache_ZTF_object, insert_data, update_value, insert_lc_dataframe, \
-    get_cached_ids
+from .constants import LOGGING, BASE_DIR, DB_DIR, SIMBAD_EXCLUDES, # FITS_DIR
+from .db_caching import create_connection, insert_data, update_value, insert_lc_dataframe, get_cached_ids
 
 # Example command line execution:
 
-# $ python ztf_rosat_crossmatch.py --kafka_path="kafka://partnership.alerts.ztf.uw.edu/ztf_20200514_programid1" > kafka_output_20200514.txt
+# for date 210119, program_id 1, 64 cores, suffix 64t
+# $ python ztf_rosat_crossmatch.py 210119 1 64 64t
 
 SIGMA_TO_95pctCL = 1.95996
-
+FITS_DIR = "../local/cutouts_debug"
 
 def exception_handler(func):
     def wrapper(*args, **kwargs):
