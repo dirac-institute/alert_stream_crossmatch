@@ -74,7 +74,7 @@ def save_cutout_fits(packet, output):
     for im_type in ["Science", "Template", "Difference"]:
         with gzip.open(io.BytesIO(packet[f"cutout{im_type}"]["stampData"]), "rb") as f:
             with fits.open(io.BytesIO(f.read())) as hdul:
-                hdul.writeto(f"{output}/{objectId}_{pid}_{im_type}.fits")
+                hdul.writeto(f"{output}/{objectId}_{pid}_{im_type}.fits", overwrite=True)
 
 
 @exception_handler
@@ -411,7 +411,7 @@ def main():
         auto_offset_reset="earliest",
         value_deserializer=read_avro_bytes,
         group_id=f"uw_xray_test_{args.suffix}",
-        consumer_timeout_ms=30000)
+        consumer_timeout_ms=300000) # 5 minute timeout
     # Get cluster layout and join group `my-group`
     tstart = time.perf_counter()
     tbatch = tstart

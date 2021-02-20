@@ -77,7 +77,7 @@ def save_cutout_fits(packet, output):
     for im_type in ["Science", "Template", "Difference"]:
         with gzip.open(io.BytesIO(packet[f"cutout{im_type}"]["stampData"]), "rb") as f:
             with fits.open(io.BytesIO(f.read())) as hdul:
-                hdul.writeto(f"{output}/{objectId}_{pid}_{im_type}.fits")
+                hdul.writeto(f"{output}/{objectId}_{pid}_{im_type}.fits", overwrite=True)
 
 
 @exception_handler
