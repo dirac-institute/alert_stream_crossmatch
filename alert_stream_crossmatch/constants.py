@@ -6,6 +6,8 @@ import logging.config
 
 BASE_DIR = os.path.dirname(os.path.abspath(inspect.getfile(
                 inspect.currentframe()))) + '/'
+DB_DIR = f"{BASE_DIR}../local/db/"
+FITS_DIR = f"{BASE_DIR}../local/cutouts/"
 
 SIMBAD_EXCLUDES = ['G?', 'SC?', 'C?G', 'Gr?', 'As?', 'Y*?', 'pr?', 'TT?', 'Mi?', 'SCG', 'ClG',
 'GrG', 'CGG', 'PaG', 'IG', 'Y*O', 'pr*', 'TT*', 'Or*', 'FU*', 'BY*', 'RS*',
@@ -19,6 +21,7 @@ class UTCFormatter(logging.Formatter):
     """Output logs in UTC"""
     converter = time.gmtime
 
+logging_level = 'DEBUG'
 
 LOGGING = {
     'version': 1,
@@ -34,13 +37,13 @@ LOGGING = {
     },
     'handlers': {
         'console':{
-            'level':'INFO',
+            'level': f'{logging_level}',
             'class':'logging.StreamHandler',
             'formatter': 'simple',
             'stream'  : 'ext://sys.stdout'
         },
         'logfile': {
-            'level': 'INFO',
+            'level': f'DEBUG',
             'class': 'logging.handlers.TimedRotatingFileHandler',
             'filename': f'{BASE_DIR}/../logs/ztf.log',
             'formatter': 'utc',
@@ -51,12 +54,11 @@ LOGGING = {
     'loggers': {
         '': { # this is the root logger; doesn't work if we call it root
             'handlers':['console','logfile'],
-            'level':'INFO',
+            'level': f'{logging_level}',
         },
         'aiohttp': {
             'handlers':['logfile'],
-            'level':'INFO',
+            'level': f'{logging_level}',
         }
     }
 }
-
