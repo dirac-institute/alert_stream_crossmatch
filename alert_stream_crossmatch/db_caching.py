@@ -167,7 +167,11 @@ def main():
                                     ra float,
                                     dec float,
                                     ROSAT_IAU_NAME text,
-                                    SIMBAD_include int
+                                    SIMBAD_include int,
+                                    last_obs float,
+                                    seen_flag int,
+                                    interest_flag int,
+                                    notes text
                                 );"""
 
     sql_create_lightcurves_table = """CREATE TABLE IF NOT EXISTS lightcurves (
