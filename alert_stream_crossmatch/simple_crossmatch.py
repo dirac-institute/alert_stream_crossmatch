@@ -246,7 +246,7 @@ def save_to_db(packet, otype, sources_saved, database, interest):
     ztf_object_id = packet["objectId"]
     data_to_update = {"SIMBAD_otype": f'"{otype}"', "ra": packet["candidate"]["ra"],
                       "dec": packet["candidate"]["dec"], "SIMBAD_include": interest,
-                      "last_obs": packet['jd'], "seen_flag": 0, "interest_flag": interest}
+                      "last_obs": packet['candidate']['jd'], "seen_flag": 0, "interest_flag": interest}
     logging.info(f"Saving new source {ztf_object_id} to database.")
 
     conn = create_connection(database)
@@ -288,7 +288,7 @@ def check_for_new_sources(packets_to_simbad, sources_saved, database):
         save_cutout_fits(packet, FITS_DIR)
         logging.debug(f"Successfully updated cutouts of {ztf_object_id}")
         # Update some of the table values: last_obs...
-        data_to_update = {"last_obs": packet["jd"]}
+        data_to_update = {"last_obs": packet["candidate"]["jd"]}
         update_value(conn, data_to_update, f'ZTF_object_id = "{ztf_object_id}"')
         conn.close()
 
