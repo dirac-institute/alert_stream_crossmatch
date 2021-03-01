@@ -183,8 +183,9 @@ def main():
                                     diffmaglim float,
                                     isdiffpos text,
                                     magnr float,
-                                    sigmagnr float
-                                    
+                                    sigmagnr float,
+                                    field int,
+                                    rcid int 
                                 );"""
 
     # create a database connection

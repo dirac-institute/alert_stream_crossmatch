@@ -84,13 +84,13 @@ def make_dataframe(packet, repeat_obs=True):
     if repeat_obs:
         df["ZTF_object_id"] = packet["objectId"]
         return df[["ZTF_object_id", "jd", "fid", "magpsf", "sigmapsf", "diffmaglim",
-                   "isdiffpos", "magnr", "sigmagnr"]]
+                   "isdiffpos", "magnr", "sigmagnr", "field", "rcid"]]
 
     df_prv = pd.DataFrame(packet["prv_candidates"])
     df_merged = pd.concat([df, df_prv], ignore_index=True)
     df_merged["ZTF_object_id"] = packet["objectId"]
     return df_merged[["ZTF_object_id", "jd", "fid", "magpsf", "sigmapsf", "diffmaglim",
-                      "isdiffpos", "magnr", "sigmagnr"]]
+                      "isdiffpos", "magnr", "sigmagnr", "field", "rcid"]]
 
 
 @exception_handler
