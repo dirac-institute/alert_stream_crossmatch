@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# By Myles McKay
+# By Myles McKay, David Wang
 # June 7, 2020
 # ZTF crossmatch with X-Ray Binaries (ROSAT catalog)
 
@@ -84,13 +84,13 @@ def make_dataframe(packet, repeat_obs=True):
     if repeat_obs:
         df["ZTF_object_id"] = packet["objectId"]
         return df[["ZTF_object_id", "jd", "fid", "magpsf", "sigmapsf", "diffmaglim",
-                   "isdiffpos", "magnr", "sigmagnr"]]
+                   "isdiffpos", "magnr", "sigmagnr", "field", "rcid"]]
 
     df_prv = pd.DataFrame(packet["prv_candidates"])
     df_merged = pd.concat([df, df_prv], ignore_index=True)
     df_merged["ZTF_object_id"] = packet["objectId"]
     return df_merged[["ZTF_object_id", "jd", "fid", "magpsf", "sigmapsf", "diffmaglim",
-                      "isdiffpos", "magnr", "sigmagnr"]]
+                      "isdiffpos", "magnr", "sigmagnr", "field", "rcid"]]
 
 
 @exception_handler
@@ -245,7 +245,8 @@ def save_to_db(packet, otype, sources_saved, database, interest):
     """
     ztf_object_id = packet["objectId"]
     data_to_update = {"SIMBAD_otype": f'"{otype}"', "ra": packet["candidate"]["ra"],
-                      "dec": packet["candidate"]["dec"], "SIMBAD_include": interest}
+                      "dec": packet["candidate"]["dec"], "SIMBAD_include": interest,
+                      "last_obs": packet['candidate']['jd'], "seen_flag": 0, "interest_flag": interest}
     logging.info(f"Saving new source {ztf_object_id} to database.")
 
     conn = create_connection(database)
@@ -276,14 +277,19 @@ def check_for_new_sources(packets_to_simbad, sources_saved, database):
     if len(new_packets) < len(packets_to_simbad):
         logging.info(f"{len(packets_to_simbad) - len(new_packets)} seen before")
 
-    for packet in old_packets:
+    for packet in old_packets:  # If we've seen this star before
         ztf_object_id = packet["objectId"]
         conn = create_connection(database)
+        # Add to lightcurve
         dflc = make_dataframe(packet, repeat_obs=True)
         insert_lc_dataframe(conn, dflc)
         logging.debug(f"Successfully updated lightcurve data from {ztf_object_id} to database.")
+        # Save most recent cutout
         save_cutout_fits(packet, FITS_DIR)
         logging.debug(f"Successfully updated cutouts of {ztf_object_id}")
+        # Update some of the table values: last_obs...
+        data_to_update = {"last_obs": packet["candidate"]["jd"]}
+        update_value(conn, data_to_update, f'ZTF_object_id = "{ztf_object_id}"')
         conn.close()
 
     return new_packets
@@ -411,7 +417,7 @@ def main():
         auto_offset_reset="earliest",
         value_deserializer=read_avro_bytes,
         group_id=f"uw_xray_test_{args.suffix}",
-        consumer_timeout_ms=300000) # 5 minute timeout
+        consumer_timeout_ms=25000000) # ~7 hour timeout
     # Get cluster layout and join group `my-group`
     tstart = time.perf_counter()
     tbatch = tstart
