@@ -1,7 +1,11 @@
 */__pycache__
 logs/
 secrets.csv
-*.db
+# *.db
 *.pyc
-local/
+# local/
 .idea
+.fits
+local/cutouts
+local/old_results
+local/cutouts_debug
