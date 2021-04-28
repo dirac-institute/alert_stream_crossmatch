@@ -70,11 +70,10 @@ def get_candidate_info(packet):
 def save_cutout_fits(packet, output):
     """Save fits cutouts from packed into output."""
     objectId = packet["objectId"]
-    pid = packet["candidate"]["pid"]
     for im_type in ["Science", "Template", "Difference"]:
         with gzip.open(io.BytesIO(packet[f"cutout{im_type}"]["stampData"]), "rb") as f:
             with fits.open(io.BytesIO(f.read())) as hdul:
-                hdul.writeto(f"{output}/{objectId}_{pid}_{im_type}.fits", overwrite=True)
+                hdul.writeto(f"{output}/{objectId}_{im_type}.fits", overwrite=True)
 
 
 @exception_handler
