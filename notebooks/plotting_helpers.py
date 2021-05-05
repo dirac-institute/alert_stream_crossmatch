@@ -40,6 +40,7 @@ def plot_dc_lightcurve(dflc, obj_id='', days_ago=True, ema='', ema_diff='', offs
     if days_ago:
         now = Time.now().jd
         t = dflc.jd - now + offset
+        t *= -1
         xlabel = 'Days Ago'
     else:
         t = dflc.jd
@@ -56,22 +57,25 @@ def plot_dc_lightcurve(dflc, obj_id='', days_ago=True, ema='', ema_diff='', offs
             if ema_diff:
                 for ii in range(len(w)):
                     if w[ii]:
-                        ax.annotate('{:.2f}'.format(-dflc.loc[ii,ema_diff]), (t[ii], dflc.loc[ii, ema]))
+                        # ax.annotate('{:.2f}'.format(-dflc.loc[ii,ema_diff]), (t[ii], dflc.loc[ii, ema]))
                         if dflc.loc[ii,ema_diff] > metric_thres:
                             ax.axvspan(t[ii]-.49, t[ii]+.49, color=color, alpha=0.1, hatch='/')
                         if dflc.loc[ii,ema_diff] < -metric_thres:
                             ax.axvspan(t[ii]-.49, t[ii]+.49, color=color, alpha=0.1)
 
-#         if np.sum(wnodet):
-#             plt.scatter(t[wnodet],dflc.loc[wnodet,'dc_mag_ulim'], marker='v',color=color,alpha=0.25)
+        wnodet = (dflc.fid == fid) & dflc.dc_mag.isnull()
+        if np.sum(wnodet):
+            ax.scatter(t[wnodet],dflc.loc[wnodet,'dc_mag_ulim'], marker='v',color=color,alpha=0.25)
 
     ax.invert_yaxis()
+    ax.invert_xaxis()
     ax.set_xlabel(xlabel)
     ax.set_ylabel('Magnitude')
     if obj_id:
         ax.set_title(obj_id)
     if show:
         plt.show()
+    plt.close(fig)
     return fig
 
         
@@ -80,6 +84,7 @@ def plot_dc_lightcurve_lim(dflc, obj_id='', days_ago=True, ema='', ema_diff='', 
     if days_ago:
         now = Time.now().jd
         t = dflc.jd - now + offset
+        t *= -1
         xlabel = 'Days Ago'
     else:
         t = dflc.jd
@@ -95,7 +100,7 @@ def plot_dc_lightcurve_lim(dflc, obj_id='', days_ago=True, ema='', ema_diff='', 
             if ema_diff:
                 for ii in range(len(w)):
                     if w[ii]:
-                        ax.annotate('{:.2f}'.format(-dflc.loc[ii,ema_diff]), (t[ii], dflc.loc[ii, ema]))
+                        # ax.annotate('{:.2f}'.format(-dflc.loc[ii,ema_diff]), (t[ii], dflc.loc[ii, ema]))
                         if dflc.loc[ii,ema_diff] > metric_thres:
                             ax.axvspan(t[ii]-.49, t[ii]+.49, color=color, alpha=0.2, hatch='/')
                         if dflc.loc[ii,ema_diff] < -metric_thres:
@@ -112,6 +117,7 @@ def plot_dc_lightcurve_lim(dflc, obj_id='', days_ago=True, ema='', ema_diff='', 
 
             
     ax.invert_yaxis()
+    ax.invert_xaxis()
     ax.set_xlabel(xlabel)
     ax.set_ylabel('Magnitude')
     if obj_id:
@@ -130,9 +136,7 @@ def plot_cutout(fits_dir, fig=None, subplot=None, **kwargs):
         ffig.show_grayscale(stretch='arcsinh')
     return ffig
 
-def show_stamps(ztf_object_id, im_dir):
-    #fig, axes = plt.subplots(1,3, figsize=(12,4))
-    
+def show_stamps(ztf_object_id, im_dir, show=False):
     fig = plt.figure(figsize=(12,4))
     dirs = glob.glob(f"{im_dir}{ztf_object_id}*.fits")
 
@@ -140,7 +144,9 @@ def show_stamps(ztf_object_id, im_dir):
         fits_dir = [x for x in dirs if cutout in x][0]
         ffig = plot_cutout(fits_dir, fig=fig, subplot = (1,3,i+1))
         ffig.set_title(cutout)
-    fig.show()
+    if show:
+        fig.show()
+    return fig
     
 def show_all(packet):
     fig = plt.figure(figsize=(16,4))
