@@ -1,7 +1,7 @@
 */__pycache__
 logs/
 secrets.csv
-# *.db
+*.db
 *.pyc
 # local/
 .idea
