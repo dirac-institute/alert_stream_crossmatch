@@ -297,6 +297,8 @@ def check_for_new_sources(packets_to_simbad, sources_saved, database):
 @exception_handler
 def process_packet(packet, rosat_skycoord, dfx, saved_packets, sources_seen, database):
     """Examine packet for matches in the ROSAT database. Save object to database if match found"""
+    if packet["candidate"]["drb"] < 0.8:  # if packet real/bogus score is low, ignore
+        return
     ztf_source = get_candidate_info(packet)
     conn = create_connection(database)
     if packet["objectId"] in sources_seen:
