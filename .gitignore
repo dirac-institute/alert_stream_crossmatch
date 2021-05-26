@@ -3,5 +3,9 @@ logs/
 secrets.csv
 *.db
 *.pyc
-local/
+# local/
 .idea
+.fits
+local/cutouts
+local/old_results
+local/cutouts_debug

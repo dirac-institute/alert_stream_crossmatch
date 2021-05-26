@@ -70,11 +70,10 @@ def get_candidate_info(packet):
 def save_cutout_fits(packet, output):
     """Save fits cutouts from packed into output."""
     objectId = packet["objectId"]
-    pid = packet["candidate"]["pid"]
     for im_type in ["Science", "Template", "Difference"]:
         with gzip.open(io.BytesIO(packet[f"cutout{im_type}"]["stampData"]), "rb") as f:
             with fits.open(io.BytesIO(f.read())) as hdul:
-                hdul.writeto(f"{output}/{objectId}_{pid}_{im_type}.fits", overwrite=True)
+                hdul.writeto(f"{output}/{objectId}_{im_type}.fits", overwrite=True)
 
 
 @exception_handler
@@ -298,6 +297,8 @@ def check_for_new_sources(packets_to_simbad, sources_saved, database):
 @exception_handler
 def process_packet(packet, rosat_skycoord, dfx, saved_packets, sources_seen, database):
     """Examine packet for matches in the ROSAT database. Save object to database if match found"""
+    if packet["candidate"]["drb"] < 0.8:  # if packet real/bogus score is low, ignore
+        return
     ztf_source = get_candidate_info(packet)
     conn = create_connection(database)
     if packet["objectId"] in sources_seen:
