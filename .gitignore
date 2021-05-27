@@ -3,5 +3,6 @@ logs/
 secrets.csv
 *.db
 *.pyc
-local/
+# local/
+*.fits
 .idea
