@@ -49,7 +49,7 @@ def cache_ZTF_object(conn, ztf_object):
     conn: sqlite3.Connection object
         The connection to the database
     ztf_object: list or str
-        Data to insert into the database in the follwoing form: (ZTF_object_id,SIMBAD_otype,ra,dec,ROSAT_IAU_NAME)
+        Data to insert into the database in the follwoing form: (ZTF_object_id,SIMBAD_otype,ra,dec,xray_name)
 
     Returns
     -------
@@ -57,7 +57,7 @@ def cache_ZTF_object(conn, ztf_object):
         Id of the last row inserted into the database
     """
 
-    sql = ''' INSERT INTO ZTF_objects(ZTF_object_id,SIMBAD_otype,ra,dec,ROSAT_IAU_NAME)
+    sql = ''' INSERT INTO ZTF_objects(ZTF_object_id,SIMBAD_otype,ra,dec,xray_name)
               VALUES(?,?,?,?,?) '''
     cur = conn.cursor()
     cur.execute(sql, ztf_object)
@@ -107,7 +107,7 @@ def select_ZTF_objects(conn, ztf_object_ids):
         except Error as e:
             raise Exception(f"Error selecting all objects from ZTF_objects {e}")
     rows = cur.fetchall()
-    df = pd.DataFrame(rows, columns=["ZTF_object_id","SIMBAD_otype","ra","dec","ROSAT_IAU_NAME", "SIMBAD_include"])
+    df = pd.DataFrame(rows, columns=["ZTF_object_id","SIMBAD_otype","ra","dec","xray_name", "SIMBAD_include"])
     cur.close()
     return df
 
@@ -166,7 +166,7 @@ def main():
                                     SIMBAD_otype text,
                                     ra float,
                                     dec float,
-                                    ROSAT_IAU_NAME text,
+                                    xray_name text,
                                     SIMBAD_include int,
                                     last_obs float,
                                     seen_flag int,
