@@ -418,7 +418,7 @@ def main():
         auto_offset_reset="earliest",
         value_deserializer=read_avro_bytes,
         group_id=f"uw_xray_test_{args.suffix}",
-        consumer_timeout_ms=25000000) # ~7 hour timeout
+        consumer_timeout_ms=7000000) # ~2 hour timeout
     # Get cluster layout and join group `my-group`
     tstart = time.perf_counter()
     tbatch = tstart
