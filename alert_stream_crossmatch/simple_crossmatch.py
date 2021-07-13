@@ -21,7 +21,7 @@ from astropy.io import fits
 from kafka import KafkaConsumer
 
 from astroquery.simbad import Simbad
-from .constants import UTCFormatter, LOGGING, BASE_DIR, DB_DIR, FITS_DIR, SIMBAD_EXCLUDES
+from .constants import UTCFormatter, LOGGING, BASE_DIR, DB_DIR, FITS_DIR, CATALOG_DIR, SIMBAD_EXCLUDES
 from .db_caching import create_connection, cache_ZTF_object, insert_data, update_value, insert_lc_dataframe, \
     get_cached_ids
 
@@ -117,7 +117,7 @@ def load_rosat():
 @exception_handler
 def load_xray():
     # open combined xray catalog
-    dfx = pd.read_csv('/epyc/users/ykwang/data/xray_catalog.csv')
+    dfx = pd.read_csv(CATALOG_DIR)
     xray_skycoord = SkyCoord(ra=dfx.RA, dec=dfx.DEC,
                               frame="icrs", unit=(u.deg))
     return dfx[["xray_name", "RA", "DEC", "err_pos_arcsec"]], xray_skycoord

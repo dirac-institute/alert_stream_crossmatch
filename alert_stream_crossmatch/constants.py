@@ -9,6 +9,9 @@ BASE_DIR = os.path.dirname(os.path.abspath(inspect.getfile(
 DB_DIR = f"{BASE_DIR}../local/db/"
 FITS_DIR = f"{BASE_DIR}../local/cutouts/"
 
+# Catalog requires xray_name, RA_DEG, DEC_DEG, and err_pos_arcsec columns
+CATALOG_DIR = '/epyc/users/ykwang/data/xray_catalog.csv'  # Change me 
+
 SIMBAD_EXCLUDES = ['G?', 'SC?', 'C?G', 'Gr?', 'As?', 'Y*?', 'pr?', 'TT?', 'Mi?', 'SCG', 'ClG',
 'GrG', 'CGG', 'PaG', 'IG', 'Y*O', 'pr*', 'TT*', 'Or*', 'FU*', 'BY*', 'RS*',
 'Pu*', 'RR*', 'Ce*', 'dS*', 'RV*', 'WV*', 'bC*', 'cC*', 'gD*', 'LP*', 'Mi*',
@@ -21,7 +24,7 @@ class UTCFormatter(logging.Formatter):
     """Output logs in UTC"""
     converter = time.gmtime
 
-logging_level = 'DEBUG'
+logging_level = 'INFO' # Change to DEBUG for more verbose logs
 
 LOGGING = {
     'version': 1,
