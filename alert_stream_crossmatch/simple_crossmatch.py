@@ -21,7 +21,7 @@ from astropy.io import fits
 from kafka import KafkaConsumer
 
 from astroquery.simbad import Simbad
-from .constants import UTCFormatter, LOGGING, BASE_DIR, DB_DIR, FITS_DIR, CATALOG_DIR, SIMBAD_EXCLUDES, GROUP_ID_PREFIX
+from .constants import UTCFormatter, LOGGING, BASE_DIR, DB_DIR, FITS_DIR, CATALOG_DIR, SIMBAD_EXCLUDES, GROUP_ID_PREFIX, KAFKA_TIMEOUT
 from .db_caching import create_connection, cache_ZTF_object, insert_data, update_value, insert_lc_dataframe, \
     get_cached_ids
 
@@ -427,7 +427,7 @@ def main():
         auto_offset_reset="earliest",
         value_deserializer=read_avro_bytes,
         group_id=f"{GROUP_ID_PREFIX}_{args.suffix}",
-        consumer_timeout_ms=7000000) # ~2 hour timeout
+        consumer_timeout_ms=KAFKA_TIMEOUT) # ~2 hour timeout
     # Get cluster layout and join group `my-group`
     tstart = time.perf_counter()
     tbatch = tstart

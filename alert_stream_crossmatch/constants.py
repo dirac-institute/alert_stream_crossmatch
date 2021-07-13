@@ -15,13 +15,16 @@ CATALOG_DIR = '/epyc/users/ykwang/data/xray_catalog.csv'  # Change me
 # group id for kafka consumer
 GROUP_ID_PREFIX = 'uw_xray'
 
+# time to continue consuming for after getting to end of queue
+KAFKA_TIMEOUT = 7000000 # ms
+
 SIMBAD_EXCLUDES = ['G?', 'SC?', 'C?G', 'Gr?', 'As?', 'Y*?', 'pr?', 'TT?', 'Mi?', 'SCG', 'ClG',
 'GrG', 'CGG', 'PaG', 'IG', 'Y*O', 'pr*', 'TT*', 'Or*', 'FU*', 'BY*', 'RS*',
 'Pu*', 'RR*', 'Ce*', 'dS*', 'RV*', 'WV*', 'bC*', 'cC*', 'gD*', 'LP*', 'Mi*',
 'SN*', 'su*', 'G', 'PoG', 'GiC', 'BiC', 'GiG', 'GiP', 'HzG', 'ALS', 'LyA',
 'DLA', 'mAL', 'LLS', 'BAL', 'rG', 'H2G', 'LSB', 'AG?', 'Q?', 'Bz?', 'BL?',
 'EmG', 'SBG', 'bCG', 'LeI', 'LeG', 'LeQ', 'AGN', 'LIN', 'SyG', 'Sy1', 'Sy2',
-'Bla', 'BLL', 'QSO']
+'Bla', 'BLL', 'QSO'] + ['HII',  'No*', 'MoC', 'Cld', 'HH', 'Ae*'] # Additional otypes from 210630 meeting
 
 class UTCFormatter(logging.Formatter):
     """Output logs in UTC"""
