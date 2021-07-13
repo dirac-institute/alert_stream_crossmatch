@@ -12,6 +12,9 @@ FITS_DIR = f"{BASE_DIR}../local/cutouts/"
 # Catalog requires xray_name, RA_DEG, DEC_DEG, and err_pos_arcsec columns
 CATALOG_DIR = '/epyc/users/ykwang/data/xray_catalog.csv'  # Change me 
 
+# group id for kafka consumer
+GROUP_ID_PREFIX = 'uw_xray'
+
 SIMBAD_EXCLUDES = ['G?', 'SC?', 'C?G', 'Gr?', 'As?', 'Y*?', 'pr?', 'TT?', 'Mi?', 'SCG', 'ClG',
 'GrG', 'CGG', 'PaG', 'IG', 'Y*O', 'pr*', 'TT*', 'Or*', 'FU*', 'BY*', 'RS*',
 'Pu*', 'RR*', 'Ce*', 'dS*', 'RV*', 'WV*', 'bC*', 'cC*', 'gD*', 'LP*', 'Mi*',
