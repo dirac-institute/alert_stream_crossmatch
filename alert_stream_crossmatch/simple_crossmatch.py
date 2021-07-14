@@ -471,6 +471,16 @@ def main():
         logging.exception(e)
     finally:
         # Will leave consumer group; perform autocommit if enabled.
+        logging.debug("start last simbad query process")
+        logging.debug('copying last packets from kafka to simbad')  # .format(len(packets_from_kafka)))
+        packets_to_simbad = deepcopy(packets_from_kafka)
+        logging.debug("determine if there are packets to simbad")
+        if len(packets_to_simbad) > 0:
+            logging.info(f'{len(packets_to_simbad)} packets to query')
+            check_simbad_and_save(
+                packets_to_simbad,
+                sources_saved, database)
+        tbatch = time.perf_counter()
         consumer.close()
         logging.info(f"finished consuming all packets in {kafka_topic} (or otherwise hit 30s time out)")
         # TODO: flush out saved packets
