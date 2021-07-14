@@ -21,7 +21,7 @@ from astropy.io import fits
 from kafka import KafkaConsumer
 
 from astroquery.simbad import Simbad
-from .constants import UTCFormatter, LOGGING, BASE_DIR, DB_DIR, FITS_DIR, SIMBAD_EXCLUDES
+from .constants import UTCFormatter, LOGGING, BASE_DIR, DB_DIR, FITS_DIR, CATALOG_DIR, SIMBAD_EXCLUDES, GROUP_ID_PREFIX, KAFKA_TIMEOUT
 from .db_caching import create_connection, cache_ZTF_object, insert_data, update_value, insert_lc_dataframe, \
     get_cached_ids
 
@@ -117,7 +117,7 @@ def load_rosat():
 @exception_handler
 def load_xray():
     # open combined xray catalog
-    dfx = pd.read_csv('/epyc/users/ykwang/data/xray_catalog.csv')
+    dfx = pd.read_csv(CATALOG_DIR)
     xray_skycoord = SkyCoord(ra=dfx.RA, dec=dfx.DEC,
                               frame="icrs", unit=(u.deg))
     return dfx[["xray_name", "RA", "DEC", "err_pos_arcsec"]], xray_skycoord
@@ -426,8 +426,8 @@ def main():
         bootstrap_servers=kafka_server,
         auto_offset_reset="earliest",
         value_deserializer=read_avro_bytes,
-        group_id=f"uw_xray_debug_{args.suffix}",
-        consumer_timeout_ms=7000000) # ~2 hour timeout
+        group_id=f"{GROUP_ID_PREFIX}_{args.suffix}",
+        consumer_timeout_ms=KAFKA_TIMEOUT) # ~2 hour timeout
     # Get cluster layout and join group `my-group`
     tstart = time.perf_counter()
     tbatch = tstart
