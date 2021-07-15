@@ -1,5 +1,5 @@
-# alert_stream_crossmatch - work in progress
+# alert_stream_crossmatch
 
-By Myles McKay and Eric Bellm
+Utilities for crossmatching the ZTF alert stream to external catalogs and identifying outbursting sources.
 
-The scripts streams ztf archieve data and crossmatch detected sources RA and DEC with the ROSAT catalog using astropy.coordinates.SkyCoord.
+This work was supported in part by NSF Grant AST-1812779.
