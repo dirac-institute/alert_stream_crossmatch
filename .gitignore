@@ -7,6 +7,5 @@ secrets.csv
 *.fits
 .idea
 .fits
-local/cutouts
 local/old_results
 local/cutouts_debug
