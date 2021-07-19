@@ -9,7 +9,6 @@ cd /epyc/users/ykwang/Github/alert_stream_crossmatch/bin
 ./run_crossmatch_simple $today 2 _pid2
 ./run_crossmatch_simple $today 1 _pid2
 
-
-mkdir -p ~/data/ztf_db_backups/$today/
-cp ../local/db/sqlite_pid2.db ~/data/ztf_db_backups/$today/sqlite_pid2_full.db
+mkdir -p ~/data/backups/$today/
+cp ../local/db/sqlite_pid2.db ~/data/backups/$today/sqlite_pid2.db
 # running one pid after the other on purpose (get denser historical data from pid2 first)
