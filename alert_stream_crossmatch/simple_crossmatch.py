@@ -21,7 +21,7 @@ from astropy.io import fits
 from kafka import KafkaConsumer
 
 from astroquery.simbad import Simbad
-from .constants import UTCFormatter, LOGGING, BASE_DIR, DB_DIR, FITS_DIR, SIMBAD_EXCLUDES
+from .constants import UTCFormatter, LOGGING, BASE_DIR, DB_DIR, FITS_DIR, CATALOG_DIR, SIMBAD_EXCLUDES, GROUP_ID_PREFIX, KAFKA_TIMEOUT
 from .db_caching import create_connection, cache_ZTF_object, insert_data, update_value, insert_lc_dataframe, \
     get_cached_ids
 
@@ -112,7 +112,16 @@ def load_rosat():
     rosat_skycoord = SkyCoord(ra=dfx.RA_DEG, dec=dfx.DEC_DEG,
                               frame="icrs", unit=(u.deg))
 
-    return dfx[["IAU_NAME", "RA_DEG", "DEC_DEG", "err_pos_arcsec"]], rosat_skycoord
+    return dfx[["xray_name", "RA_DEG", "DEC_DEG", "err_pos_arcsec"]], rosat_skycoord
+
+@exception_handler
+def load_xray():
+    # open combined xray catalog
+    dfx = pd.read_csv(CATALOG_DIR)
+    xray_skycoord = SkyCoord(ra=dfx.RA, dec=dfx.DEC,
+                              frame="icrs", unit=(u.deg))
+    return dfx[["xray_name", "RA", "DEC", "err_pos_arcsec"]], xray_skycoord
+
 
 
 @exception_handler
@@ -186,7 +195,7 @@ def is_excluded_simbad_class(ztf_source):
         return False
 
 
-def ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx):
+def ztf_rosat_crossmatch(ztf_source, xray_skycoord, dfx):
     """
     Cross match ZTF and ROSAT data using astropy.coordinates.SkyCoord
 
@@ -195,7 +204,7 @@ def ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx):
                     {'ra': float (degrees), 'dec': float (degrees),
                     'object_id': string, 'candid': int}
 
-                rosat_skycoord: astropy.coordinates.SkyCoord
+                xray_skycoord: astropy.coordinates.SkyCoord
                     ROSAT catalog in astropy.coordinates.SkyCoord
 
                 dfx: pandas.DataFrame
@@ -214,15 +223,15 @@ def ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx):
                                  frame="icrs", unit=(u.deg))
 
         # Finds the nearest ROSAT source's coordinates to the avro files ra[deg] and dec[deg]
-        match_idx, match_sep2d, _ = avro_skycoord.match_to_catalog_sky(rosat_skycoord)
+        match_idx, match_sep2d, _ = avro_skycoord.match_to_catalog_sky(xray_skycoord)
 
         match_row = dfx.iloc[match_idx]
 
         matched = match_sep2d[0] <= match_row["err_pos_arcsec"] * u.arcsecond
 
-        match_result = {"match_name": match_row["IAU_NAME"],
-                        "match_ra": match_row["RA_DEG"],
-                        "match_dec": match_row["DEC_DEG"],
+        match_result = {"match_name": match_row["xray_name"],
+                        "match_ra": match_row["RA"],
+                        "match_dec": match_row["DEC"],
                         "match_err_pos": match_row["err_pos_arcsec"],
                         "match_sep": match_sep2d[0].to(u.arcsecond).value}
 
@@ -295,10 +304,14 @@ def check_for_new_sources(packets_to_simbad, sources_saved, database):
 
 
 @exception_handler
-def process_packet(packet, rosat_skycoord, dfx, saved_packets, sources_seen, database):
+def process_packet(packet, xray_skycoord, dfx, saved_packets, sources_seen, database):
     """Examine packet for matches in the ROSAT database. Save object to database if match found"""
     if packet["candidate"]["drb"] < 0.8:  # if packet real/bogus score is low, ignore
         return
+    # # Not a solar system object (or no known obj within 5")
+    if (packet["candidate"]['ssdistnr'] is None) or (packet["candidate"]['ssdistnr'] < 0) or (packet["candidate"]['ssdistnr'] > 5):
+        return
+
     ztf_source = get_candidate_info(packet)
     conn = create_connection(database)
     if packet["objectId"] in sources_seen:
@@ -308,12 +321,12 @@ def process_packet(packet, rosat_skycoord, dfx, saved_packets, sources_seen, dat
         conn.close()
         logging.debug(f"Total of {len(saved_packets)} saved for query.")
     else:
-        matched_source = ztf_rosat_crossmatch(ztf_source, rosat_skycoord, dfx)
+        matched_source = ztf_rosat_crossmatch(ztf_source, xray_skycoord, dfx)
         if (matched_source is not None) and not_moving_object(packet):
             logging.debug("adding packet to packets_from_kafka")
             saved_packets.append(packet)
             sources_seen.update((packet["objectId"],))
-            data_to_insert = {"ZTF_object_id": packet["objectId"], "ROSAT_IAU_NAME": matched_source["match_name"]}
+            data_to_insert = {"ZTF_object_id": packet["objectId"], "xray_name": matched_source["match_name"]}
             insert_data(conn, "ZTF_objects", data_to_insert)
             logging.debug(f"Successfully saved {packet['objectId']} to database")
             conn.close()
@@ -408,7 +421,7 @@ def main():
     logging.debug(f"Args parsed and validated: {args.date}, {args.program_id}")
 
     # load X-ray catalogs
-    dfx, rosat_skycoord = load_rosat()
+    dfx, xray_skycoord = load_xray()
 
     logging.info(f"Connecting to Kafka topic {kafka_topic}")
 
@@ -417,8 +430,8 @@ def main():
         bootstrap_servers=kafka_server,
         auto_offset_reset="earliest",
         value_deserializer=read_avro_bytes,
-        group_id=f"uw_xray_test_{args.suffix}",
-        consumer_timeout_ms=7000000) # ~2 hour timeout
+        group_id=f"{GROUP_ID_PREFIX}_{args.suffix}",
+        consumer_timeout_ms=KAFKA_TIMEOUT) # ~2 hour timeout
     # Get cluster layout and join group `my-group`
     tstart = time.perf_counter()
     tbatch = tstart
@@ -456,12 +469,22 @@ def main():
                 tbatch = time.perf_counter()
 
             packet = msg.value
-            process_packet(packet, rosat_skycoord, dfx, packets_from_kafka, sources_seen, database)
+            process_packet(packet, xray_skycoord, dfx, packets_from_kafka, sources_seen, database)
 
     except Exception as e:
         logging.exception(e)
     finally:
         # Will leave consumer group; perform autocommit if enabled.
+        logging.debug("start last simbad query process")
+        logging.debug('copying last packets from kafka to simbad')  # .format(len(packets_from_kafka)))
+        packets_to_simbad = deepcopy(packets_from_kafka)
+        logging.debug("determine if there are packets to simbad")
+        if len(packets_to_simbad) > 0:
+            logging.info(f'{len(packets_to_simbad)} packets to query')
+            check_simbad_and_save(
+                packets_to_simbad,
+                sources_saved, database)
+        tbatch = time.perf_counter()
         consumer.close()
         logging.info(f"finished consuming all packets in {kafka_topic} (or otherwise hit 30s time out)")
         # TODO: flush out saved packets
