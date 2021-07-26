@@ -13,7 +13,7 @@ FITS_DIR = f"{BASE_DIR}../local/cutouts/"
 CATALOG_DIR = '/epyc/users/ykwang/data/xray_catalog.csv'  # Change me 
 
 # group id for kafka consumer
-GROUP_ID_PREFIX = 'uw_xray'
+GROUP_ID_PREFIX = 'uw_xraytest'
 
 # time to continue consuming for after getting to end of queue
 KAFKA_TIMEOUT = 7000000 # ms
