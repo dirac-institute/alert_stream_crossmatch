@@ -7,8 +7,8 @@ source  "/epyc/opt/anaconda-2019/etc/profile.d/conda.sh"
 conda activate ztf_kafka
 cd $working_dir/bin
 
-./run_crossmatch_simple $today 2 $db_suffix
-./run_crossmatch_simple $today 1 $db_suffix
+./run_crossmatch_simple $today 2 $db_suffix_partnership
+./run_crossmatch_simple $today 1 $db_suffix_partnership
 
 mkdir -p $backup_dir/$today/
 cp ../local/db/sqlite_pid2.db $backup_dir/$today/sqlite_pid2.db
