@@ -309,7 +309,7 @@ def process_packet(packet, xray_skycoord, dfx, saved_packets, sources_seen, data
     if packet["candidate"]["drb"] < 0.8:  # if packet real/bogus score is low, ignore
         return
     # # Not a solar system object (or no known obj within 5")
-    if (packet["candidate"]['ssdistnr'] is None) or (packet["candidate"]['ssdistnr'] < 0) or (packet["candidate"]['ssdistnr'] > 5):
+    if not((packet["candidate"]['ssdistnr'] is None) or (packet["candidate"]['ssdistnr'] < 0) or (packet["candidate"]['ssdistnr'] > 5)):
         return
 
     ztf_source = get_candidate_info(packet)
@@ -422,7 +422,6 @@ def main():
 
     # load X-ray catalogs
     dfx, xray_skycoord = load_xray()
-
     logging.info(f"Connecting to Kafka topic {kafka_topic}")
 
     consumer = KafkaConsumer(
@@ -430,7 +429,7 @@ def main():
         bootstrap_servers=kafka_server,
         auto_offset_reset="earliest",
         value_deserializer=read_avro_bytes,
-        group_id=f"{GROUP_ID_PREFIX}_{args.suffix}",
+        group_id=f"{GROUP_ID_PREFIX}catch_up{args.suffix}",
         consumer_timeout_ms=KAFKA_TIMEOUT) # ~2 hour timeout
     # Get cluster layout and join group `my-group`
     tstart = time.perf_counter()
