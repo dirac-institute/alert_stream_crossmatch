@@ -16,7 +16,7 @@ CATALOG_DIR = '/epyc/users/ykwang/data/xray_catalog.csv'  # Change me
 GROUP_ID_PREFIX = 'uw_xraytest'
 
 # time to continue consuming for after getting to end of queue
-KAFKA_TIMEOUT = 7000000 # ms
+KAFKA_TIMEOUT = 20000 #7000000 # ms
 
 SIMBAD_EXCLUDES = ['G?', 'SC?', 'C?G', 'Gr?', 'As?', 'Y*?', 'pr?', 'TT?', 'Mi?', 'SCG', 'ClG',
 'GrG', 'CGG', 'PaG', 'IG', 'Y*O', 'pr*', 'TT*', 'Or*', 'FU*', 'BY*', 'RS*',

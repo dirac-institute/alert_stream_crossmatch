@@ -422,7 +422,6 @@ def main():
 
     # load X-ray catalogs
     dfx, xray_skycoord = load_xray()
-
     logging.info(f"Connecting to Kafka topic {kafka_topic}")
 
     consumer = KafkaConsumer(
@@ -430,7 +429,7 @@ def main():
         bootstrap_servers=kafka_server,
         auto_offset_reset="earliest",
         value_deserializer=read_avro_bytes,
-        group_id=f"{GROUP_ID_PREFIX}_{args.suffix}",
+        group_id=f"{GROUP_ID_PREFIX}catch_up{args.suffix}",
         consumer_timeout_ms=KAFKA_TIMEOUT) # ~2 hour timeout
     # Get cluster layout and join group `my-group`
     tstart = time.perf_counter()
