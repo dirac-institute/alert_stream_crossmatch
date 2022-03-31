@@ -309,7 +309,7 @@ def process_packet(packet, xray_skycoord, dfx, saved_packets, sources_seen, data
     if packet["candidate"]["drb"] < 0.8:  # if packet real/bogus score is low, ignore
         return
     # # Not a solar system object (or no known obj within 5")
-    if (packet["candidate"]['ssdistnr'] is None) or (packet["candidate"]['ssdistnr'] < 0) or (packet["candidate"]['ssdistnr'] > 5):
+    if not ((packet["candidate"]['ssdistnr'] is None) or (packet["candidate"]['ssdistnr'] < 0) or (packet["candidate"]['ssdistnr'] > 5)):
         return
 
     ztf_source = get_candidate_info(packet)
