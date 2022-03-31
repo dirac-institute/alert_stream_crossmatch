@@ -309,7 +309,7 @@ def process_packet(packet, xray_skycoord, dfx, saved_packets, sources_seen, data
     if packet["candidate"]["drb"] < 0.8:  # if packet real/bogus score is low, ignore
         return
     # # Not a solar system object (or no known obj within 5")
-    if not((packet["candidate"]['ssdistnr'] is None) or (packet["candidate"]['ssdistnr'] < 0) or (packet["candidate"]['ssdistnr'] > 5)):
+    if not ((packet["candidate"]['ssdistnr'] is None) or (packet["candidate"]['ssdistnr'] < 0) or (packet["candidate"]['ssdistnr'] > 5)):
         return
 
     ztf_source = get_candidate_info(packet)
@@ -409,7 +409,7 @@ def main():
 
 
     database = DB_DIR + f"sqlite{args.suffix}.db"
-    logging.debug(f"Database at {database}")
+    logging.info(f"Database at {database}")
 
     kafka_topic = f"ztf_20{args.date}_programid{args.program_id}"
     kafka_server = "partnership.alerts.ztf.uw.edu:9092"
@@ -418,7 +418,7 @@ def main():
     LOGGING["handlers"]["logfile"]["filename"] = f"{BASE_DIR}/../logs/{kafka_topic}_{now}.log"
     logging.config.dictConfig(LOGGING)
 
-    logging.debug(f"Args parsed and validated: {args.date}, {args.program_id}")
+    logging.info(f"Args parsed and validated: {args.date}, {args.program_id}")
 
     # load X-ray catalogs
     dfx, xray_skycoord = load_xray()
@@ -444,7 +444,7 @@ def main():
     logging.info(f"{len(sources_saved)} sources previously seen")
     n0_sources = len(sources_saved)
     conn.close()
-    logging.debug('begin ingesting messages')
+    logging.info('begin ingesting messages')
     try:
         for msg in consumer:
             i += 1
