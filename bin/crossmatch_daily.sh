@@ -12,4 +12,5 @@ cd $working_dir/bin
 
 mkdir -p $backup_dir/$today/
 cp ../local/db/sqlite_pid2.db $backup_dir/$today/sqlite_pid2.db
+cp ../local/db/sqlite_pid2.db /epyc/users/ecbellm/alert_stream_crossmatch/local/db/sqlite2.db
 # running one pid after the other on purpose (get denser historical data from pid2 first)
