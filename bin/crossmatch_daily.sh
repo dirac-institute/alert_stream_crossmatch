@@ -1,4 +1,5 @@
 #! /bin/bash
+cd /epyc/users/ykwang/Github/production/alert_stream_crossmatch/bin
 
 . ./setup.cfg
 today=$(date +"%y%m%d")
