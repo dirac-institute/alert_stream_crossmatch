@@ -128,12 +128,21 @@ def get_cached_ids(conn, condition=None):
     cur.close()
     return ids
 
+def last_obs_gt_30(conn, ztf_object_id, jd, thres=30):
+    """Return true if last obs of ztf_object_id was more than 30 days ago
+    """
+    cur = conn.cursor()
+    cur.execute("SELECT last_obs FROM ZTF_objects WHERE ZTF_object_id=?", (ztf_object_id,))
+    last_obs = cur.fetchone()[0]
+    if pd.isna(last_obs):
+        return True
+    return (jd - last_obs) > thres
 
 def clear_ZTF_table(conn):
     """Delete all rows in ZTF_objects
     """
     cur = conn.cursor()
-    cur.execute("DELETE FROM ZTF_objects")         
+    cur.execute("DELETE FROM ZTF_objects")
     cur.close()
 
 
@@ -185,7 +194,7 @@ def main():
                                     magnr float,
                                     sigmagnr float,
                                     field int,
-                                    rcid int 
+                                    rcid int
                                 );"""
 
     # create a database connection

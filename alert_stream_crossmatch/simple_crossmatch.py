@@ -260,7 +260,11 @@ def save_to_db(packet, otype, sources_saved, database, interest):
     conn = create_connection(database)
     if ztf_object_id in sources_saved:
         logging.info(f"{ztf_object_id} already saved in time between simbad check and now")
-        dflc = make_dataframe(packet, repeat_obs=True)
+        if last_obs_gt_30(conn, ztf_object_id, packet['candidate']['jd']): # pull in ND data
+            dflc = make_dataframe(packet, repeat_obs=False)
+        else:
+            dflc = make_dataframe(packet, repeat_obs=True)
+
     else:
         update_value(conn, data_to_update, f'ZTF_object_id = "{ztf_object_id}"')
         dflc = make_dataframe(packet, repeat_obs=False)
