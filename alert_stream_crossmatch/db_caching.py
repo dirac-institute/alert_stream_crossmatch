@@ -39,6 +39,15 @@ def create_table(conn, create_table_sql):
     except Error as e:
         raise Exception(f"Error creating table {e}")
 
+def add_column(conn, table_name, column_name, column_type):
+    """ Add a column to table
+    """
+    try:
+        cur = conn.cursor()
+        cur.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
+        cur.close()
+    except Error as e:
+        raise Exception(f"error adding column to table {e}")
 
 def cache_ZTF_object(conn, ztf_object):
     """
