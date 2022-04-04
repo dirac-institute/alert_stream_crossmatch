@@ -262,12 +262,17 @@ def save_to_db(packet, otype, sources_saved, database, interest):
         logging.info(f"{ztf_object_id} already saved in time between simbad check and now")
         if last_obs_gt_30(conn, ztf_object_id, packet['candidate']['jd']): # pull in ND data
             dflc = make_dataframe(packet, repeat_obs=False)
+            # TODO: calculate EWMA8 online
         else:
             dflc = make_dataframe(packet, repeat_obs=True)
+            # TODO: calculate EWMA from prv data
+        # TODO: update EWMA and last_obs
 
     else:
+        # TODO: update EWMA and last_obs
         update_value(conn, data_to_update, f'ZTF_object_id = "{ztf_object_id}"')
         dflc = make_dataframe(packet, repeat_obs=False)
+        # TODO: calculate EWMA from prv data
         # cache_ZTF_object(conn, (ztf_object_id, simbad_otype, ra, dec, rosat_iau_name))
         logging.debug(f"Successfully saved new source {ztf_object_id} to database.")
         save_cutout_fits(packet, FITS_DIR)
@@ -294,12 +299,14 @@ def check_for_new_sources(packets_to_simbad, sources_saved, database):
         conn = create_connection(database)
         # Add to lightcurve
         dflc = make_dataframe(packet, repeat_obs=True)
+        # TODO: calculate EWMA8
         insert_lc_dataframe(conn, dflc)
         logging.debug(f"Successfully updated lightcurve data from {ztf_object_id} to database.")
         # Save most recent cutout
         save_cutout_fits(packet, FITS_DIR)
         logging.debug(f"Successfully updated cutouts of {ztf_object_id}")
         # Update some of the table values: last_obs...
+        # TODO: add EWMA to updated values
         data_to_update = {"last_obs": packet["candidate"]["jd"]}
         update_value(conn, data_to_update, f'ZTF_object_id = "{ztf_object_id}"')
         conn.close()
@@ -318,14 +325,23 @@ def process_packet(packet, xray_skycoord, dfx, saved_packets, sources_seen, data
 
     ztf_source = get_candidate_info(packet)
     conn = create_connection(database)
+    """
+    BIG TODO:
+        Add EWMA calculations
+        Save lc measurements here as well?
+        save to ZTF_objects table as well?
+    """
+    # if packet is seen, just add packet to packets_from_kafka
     if packet["objectId"] in sources_seen:
         logging.debug(f"{packet['objectId']} already known match, adding packet to packets_from_kafka")
         saved_packets.append(packet)
-        sources_seen.update((packet["objectId"],))
+        sources_seen.update((packet["objectId"],)) # not sure if this is doing anything
         conn.close()
         logging.debug(f"Total of {len(saved_packets)} saved for query.")
+    # if not seen, crossmatch
     else:
         matched_source = ztf_rosat_crossmatch(ztf_source, xray_skycoord, dfx)
+        # if a matched source exists, add to the table ZTF_objects and append packet to packets_from_kafka
         if (matched_source is not None) and not_moving_object(packet):
             logging.debug("adding packet to packets_from_kafka")
             saved_packets.append(packet)
@@ -394,7 +410,7 @@ def check_simbad_and_save(packets_to_simbad, sources_saved, database):
         else:
             # no match in simbad,
             logging.info(f"{packet['objectId']} not found in Simbad")
-            save_to_db(packet, None, sources_saved, database, interest=0)
+            save_to_db(packet, None, sources_saved, database, interest=0) # Change to 1????
 
 
 def main():
