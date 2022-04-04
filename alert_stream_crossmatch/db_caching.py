@@ -188,7 +188,8 @@ def create_db(suffix, subfolder=''):
                                     last_obs float,
                                     seen_flag int,
                                     interest_flag int,
-                                    notes text
+                                    notes text,
+                                    EWMA8 float
                                 );"""
 
     sql_create_lightcurves_table = """CREATE TABLE IF NOT EXISTS lightcurves (
