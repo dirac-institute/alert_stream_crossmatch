@@ -1,0 +1,10 @@
+/epyc/data/ztf/alerts/public/ztf_public_20180601.tar.gz
+/epyc/data/ztf/alerts/public/ztf_public_20180602.tar.gz
+/epyc/data/ztf/alerts/public/ztf_public_20180603.tar.gz
+/epyc/data/ztf/alerts/public/ztf_public_20180604.tar.gz
+/epyc/data/ztf/alerts/public/ztf_public_20180605.tar.gz
+/epyc/data/ztf/alerts/public/ztf_public_20180606.tar.gz
+/epyc/data/ztf/alerts/public/ztf_public_20180607.tar.gz
+/epyc/data/ztf/alerts/public/ztf_public_20180608.tar.gz
+/epyc/data/ztf/alerts/public/ztf_public_20180609.tar.gz
+/epyc/data/ztf/alerts/public/ztf_public_20180610.tar.gz
