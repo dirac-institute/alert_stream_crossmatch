@@ -175,9 +175,8 @@ def insert_lc_dataframe(conn, df):
     df.to_sql('lightcurves', conn, if_exists='append', index=False)
 
 
-def main():
-    # print("arg 1: delete from database, arg 2: suffix for database")
-    database = DB_DIR + 'sqlite{}.db'.format(sys.argv[2])
+def create_db(suffix, subfolder=''):
+    database = DB_DIR + subfolder + 'sqlite{}.db'.format(suffix)
 
     sql_create_ZTF_objects_table = """CREATE TABLE IF NOT EXISTS ZTF_objects (
                                     ZTF_object_id text,
@@ -207,14 +206,40 @@ def main():
                                     rcid int
                                 );"""
 
+    conn = create_connection(database)
+    if conn is not None:
+        create_table(conn, sql_create_ZTF_objects_table)
+        create_table(conn, sql_create_lightcurves_table)
+    else:
+        print("Error! Cannot create the database connection.")
+
+def add_db2_to_db1(path_to_db1, path_to_db2):
+    """
+    For two dbs, db1 and db2, with identical schemas, add all rows of db2 to db1.
+    """
+    conn = sqlite3.connect(path_to_db1)
+
+    conn.execute(f"ATTACH '{path_to_db2}' as db2")
+
+    conn.execute("BEGIN")
+    for row in conn.execute("SELECT * FROM db2.sqlite_master WHERE type='table'"):
+        combine = "INSERT INTO "+ row[1] + " SELECT * FROM db2." + row[1]
+        print(combine)
+        conn.execute(combine)
+    conn.commit()
+    conn.execute("detach database db2")
+    conn.close()
+
+def main():
+    # print("arg 1: delete from database, arg 2: suffix for database")
+    database = DB_DIR + 'sqlite{}.db'.format(sys.argv[2])
     # create a database connection
     conn = create_connection(database)
 
     # create tables
     if conn is not None:
         # create tasks table
-        create_table(conn, sql_create_ZTF_objects_table)
-        create_table(conn, sql_create_lightcurves_table)
+        create_db(sys.argv[2])
     else:
         print("Error! cannot create the database connection.")
 

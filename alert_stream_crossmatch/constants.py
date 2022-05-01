@@ -8,7 +8,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(inspect.getfile(
                 inspect.currentframe()))) + '/'
 DB_DIR = f"{BASE_DIR}../local/db/"
 FITS_DIR = f"{BASE_DIR}../local/cutouts/"
-
+ARCHIVAL_DIR = "/epyc/data/ztf/alerts/"
 # Catalog requires xray_name, RA_DEG, DEC_DEG, and err_pos_arcsec columns
 CATALOG_DIR = '/epyc/users/ykwang/data/xray_catalog.csv'  # Change me 
 

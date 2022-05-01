@@ -6,6 +6,7 @@
 
 import io
 import gzip
+import tarfile
 import time
 import datetime
 import argparse
@@ -18,12 +19,11 @@ from astropy.coordinates import SkyCoord, match_coordinates_sky
 import astropy.units as u
 from astropy.io import fits
 
-from kafka import KafkaConsumer
 
 from astroquery.simbad import Simbad
-from .constants import UTCFormatter, LOGGING, BASE_DIR, DB_DIR, FITS_DIR, CATALOG_DIR, SIMBAD_EXCLUDES, GROUP_ID_PREFIX, KAFKA_TIMEOUT
+from .constants import UTCFormatter, LOGGING, BASE_DIR, DB_DIR, FITS_DIR, CATALOG_DIR, SIMBAD_EXCLUDES, GROUP_ID_PREFIX, KAFKA_TIMEOUT, ARCHIVAL_DIR
 from .db_caching import create_connection, cache_ZTF_object, insert_data, update_value, insert_lc_dataframe, \
-    get_cached_ids
+    get_cached_ids, create_db, add_db2_to_db1
 
 # Example command line execution:
 
@@ -260,22 +260,13 @@ def save_to_db(packet, otype, sources_saved, database, interest):
     conn = create_connection(database)
     if ztf_object_id in sources_saved:
         logging.info(f"{ztf_object_id} already saved in time between simbad check and now")
-        if last_obs_gt_30(conn, ztf_object_id, packet['candidate']['jd']): # pull in ND data
-            dflc = make_dataframe(packet, repeat_obs=False)
-            # TODO: calculate EWMA8 online
-        else:
-            dflc = make_dataframe(packet, repeat_obs=True)
-            # TODO: calculate EWMA from prv data
-        # TODO: update EWMA and last_obs
-
+        dflc = make_dataframe(packet, repeat_obs=True)
     else:
-        # TODO: update EWMA and last_obs
         update_value(conn, data_to_update, f'ZTF_object_id = "{ztf_object_id}"')
-        dflc = make_dataframe(packet, repeat_obs=False)
-        # TODO: calculate EWMA from prv data
+        dflc = make_dataframe(packet, repeat_obs=True) # only save the current obs for archival xmatch
         # cache_ZTF_object(conn, (ztf_object_id, simbad_otype, ra, dec, rosat_iau_name))
         logging.debug(f"Successfully saved new source {ztf_object_id} to database.")
-        save_cutout_fits(packet, FITS_DIR)
+        # save_cutout_fits(packet, FITS_DIR)
         logging.debug(f"Successfully saved cutouts of {ztf_object_id}")
     insert_lc_dataframe(conn, dflc)
     logging.debug(f"Successfully ingested lightcurve data from {ztf_object_id} to database.")
@@ -298,18 +289,13 @@ def check_for_new_sources(packets_to_simbad, sources_saved, database):
         ztf_object_id = packet["objectId"]
         conn = create_connection(database)
         # Add to lightcurve
-        dflc = make_dataframe(packet, repeat_obs=True)        # TODO: calculate EWMA8
-
-        if last_obs_gt_30(conn, ztf_object_id, packet['candidate']['jd']): # pull in ND data
-            dflc = make_dataframe(packet, repeat_obs=False)
-
+        dflc = make_dataframe(packet, repeat_obs=True)
         insert_lc_dataframe(conn, dflc)
         logging.debug(f"Successfully updated lightcurve data from {ztf_object_id} to database.")
         # Save most recent cutout
         save_cutout_fits(packet, FITS_DIR)
         logging.debug(f"Successfully updated cutouts of {ztf_object_id}")
         # Update some of the table values: last_obs...
-        # TODO: add EWMA to updated values
         data_to_update = {"last_obs": packet["candidate"]["jd"]}
         update_value(conn, data_to_update, f'ZTF_object_id = "{ztf_object_id}"')
         conn.close()
@@ -320,31 +306,23 @@ def check_for_new_sources(packets_to_simbad, sources_saved, database):
 @exception_handler
 def process_packet(packet, xray_skycoord, dfx, saved_packets, sources_seen, database):
     """Examine packet for matches in the ROSAT database. Save object to database if match found"""
-    if packet["candidate"]["drb"] < 0.8:  # if packet real/bogus score is low, ignore
+    rb_key = "drb" if "drb" in packet["candidate"].keys() else 'rb'
+    if packet["candidate"][rb_key] < 0.8:  # if packet real/bogus score is low, ignore
         return
     # # Not a solar system object (or no known obj within 5")
-    if not ((packet["candidate"]['ssdistnr'] is None) or (packet["candidate"]['ssdistnr'] < 0) or (packet["candidate"]['ssdistnr'] > 5)):
+    if not((packet["candidate"]['ssdistnr'] is None) or (packet["candidate"]['ssdistnr'] < 0) or (packet["candidate"]['ssdistnr'] > 5)):
         return
 
     ztf_source = get_candidate_info(packet)
     conn = create_connection(database)
-    """
-    BIG TODO:
-        Add EWMA calculations
-        Save lc measurements here as well?
-        save to ZTF_objects table as well?
-    """
-    # if packet is seen, just add packet to packets_from_kafka
     if packet["objectId"] in sources_seen:
         logging.debug(f"{packet['objectId']} already known match, adding packet to packets_from_kafka")
         saved_packets.append(packet)
-        sources_seen.update((packet["objectId"],)) # not sure if this is doing anything
+        sources_seen.update((packet["objectId"],))
         conn.close()
         logging.debug(f"Total of {len(saved_packets)} saved for query.")
-    # if not seen, crossmatch
     else:
         matched_source = ztf_rosat_crossmatch(ztf_source, xray_skycoord, dfx)
-        # if a matched source exists, add to the table ZTF_objects and append packet to packets_from_kafka
         if (matched_source is not None) and not_moving_object(packet):
             logging.debug("adding packet to packets_from_kafka")
             saved_packets.append(packet)
@@ -413,47 +391,50 @@ def check_simbad_and_save(packets_to_simbad, sources_saved, database):
         else:
             # no match in simbad,
             logging.info(f"{packet['objectId']} not found in Simbad")
-            save_to_db(packet, None, sources_saved, database, interest=0) # Change to 1????
+            save_to_db(packet, None, sources_saved, database, interest=0)
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("date", type=str, help="UTC date as YYMMDD")
-    parser.add_argument("program_id", type=int, help="Program ID (1 or 2)")
-    parser.add_argument("suffix", type=str, help="suffix of db")
+    #parser.add_argument("date", type=str, help="UTC date as YYMMDD")
+    #parser.add_argument("program_id", type=int, help="Program ID (1 or 2)")
+    parser.add_argument("tarball", type=str, help="name of tarball file (.tar.gz)")
+    # parser.add_argument("suffix", type=str, help="suffix of db")
 
     args = parser.parse_args()
+    suffix = 'archival'
+    # if len(args.date) != 6:
+    #     raise ValueError(f"Date must be specified as YYMMDD.  Provided {args.date}")
 
-    if len(args.date) != 6:
-        raise ValueError(f"Date must be specified as YYMMDD.  Provided {args.date}")
+    # if args.program_id not in [1, 2]:
+    #     raise ValueError(f"Program id must be 1 or 2.  Provided {args.program_id}")
 
-    if args.program_id not in [1, 2]:
-        raise ValueError(f"Program id must be 1 or 2.  Provided {args.program_id}")
+    # TIMESTAMP = '20' + args.date
+    # program = 'public' if args.program_id == 1 else 'partnership'
+    tarball_path = args.tarball # .split("/")[-1] # f'ztf_{program}_{TIMESTAMP}.tar.gz'
+    # tarball_dir = ARCHIVAL_DIR + program + '/' + tarball_name
+    consume_tarball(tarball_path)
+
+def consume_tarball(tarball_path):
+    tar = tarfile.open(tarball_path)
+
+    # database = DB_DIR + f"sqlite_{suffix}.db"
+    # logging.info(f"Database at {database}")
 
 
-    database = DB_DIR + f"sqlite{args.suffix}.db"
-    logging.info(f"Database at {database}")
-
-    kafka_topic = f"ztf_20{args.date}_programid{args.program_id}"
-    kafka_server = "partnership.alerts.ztf.uw.edu:9092"
-
+    tarball_day = tarball_path.split("/")[-1].split(".")[0].split("_")[-1]
+    create_db(f'_{tarball_day}', subfolder='archival/')
+    database = DB_DIR + f'archival/sqlite_{tarball_day}.db'
+    
     now = datetime.datetime.now().strftime("%d%m%y_%H%M%S")
-    LOGGING["handlers"]["logfile"]["filename"] = f"{BASE_DIR}/../logs/{kafka_topic}_{now}.log"
+    LOGGING["handlers"]["logfile"]["filename"] = f"{BASE_DIR}/../logs/archival/archival_ztf{tarball_day}_{now}.log"
     logging.config.dictConfig(LOGGING)
 
-    logging.info(f"Args parsed and validated: {args.date}, {args.program_id}")
+    logging.info(f"Database at {database}") 
 
     # load X-ray catalogs
     dfx, xray_skycoord = load_xray()
-    logging.info(f"Connecting to Kafka topic {kafka_topic}")
 
-    consumer = KafkaConsumer(
-        kafka_topic,
-        bootstrap_servers=kafka_server,
-        auto_offset_reset="earliest",
-        value_deserializer=read_avro_bytes,
-        group_id=f"{GROUP_ID_PREFIX}catch_up{args.suffix}",
-        consumer_timeout_ms=KAFKA_TIMEOUT) # ~2 hour timeout
     # Get cluster layout and join group `my-group`
     tstart = time.perf_counter()
     tbatch = tstart
@@ -461,15 +442,17 @@ def main():
     nmod = 1000
     packets_from_kafka = []
     packets_to_simbad = []
-    conn = create_connection(database)
-    sources_saved = set(get_cached_ids(conn).values)    # These are sources in both tables (ZTF_objects and lightcurves)
-    sources_seen = set(get_cached_ids(conn).values)     # These are sources only in ZTF objects
+    # conn = create_connection(database)
+    all_db = DB_DIR + 'sqlite_all3.db'
+    total_conn = create_connection(all_db)
+    sources_saved = set(get_cached_ids(total_conn).values)    # These are sources in both tables (ZTF_objects and lightcurves)
+    sources_seen = set(get_cached_ids(total_conn).values)     # These are sources only in ZTF objects
     logging.info(f"{len(sources_saved)} sources previously seen")
     n0_sources = len(sources_saved)
-    conn.close()
-    logging.info('begin ingesting messages')
+    total_conn.close()
+    logging.info('begin ingesting messages, {} total'.format(len(tar.getmembers())))
     try:
-        for msg in consumer:
+        for tarpacket in tar.getmembers():
             i += 1
             if i % nmod == 0:
                 elapsed = time.perf_counter() - tstart
@@ -479,7 +462,7 @@ def main():
             # query simbad in batches
             if time.perf_counter() - tbatch >= 40:
                 logging.debug("start simbad query process")
-                logging.debug('copying packets from kafka to simbad')  # .format(len(packets_from_kafka)))
+                logging.debug('copying packets from kafka to simbad') # .format(len(packets_from_kafka)))
                 packets_to_simbad = deepcopy(packets_from_kafka)
                 packets_from_kafka = []
                 logging.debug("determine if there are packets to simbad")
@@ -490,7 +473,7 @@ def main():
                         sources_saved, database)
                 tbatch = time.perf_counter()
 
-            packet = msg.value
+            packet = read_avro_bytes(tar.extractfile(tarpacket).read())
             process_packet(packet, xray_skycoord, dfx, packets_from_kafka, sources_seen, database)
 
     except Exception as e:
@@ -507,6 +490,10 @@ def main():
                 packets_to_simbad,
                 sources_saved, database)
         tbatch = time.perf_counter()
-        consumer.close()
-        logging.info(f"finished consuming all packets in {kafka_topic} (or otherwise hit 30s time out)")
+        logging.info(f"finished consuming all packets in {tarball_path.split('/')[-1]}")
+        add_db2_to_db1(all_db, database)
+        logging.info(f"added rows from {database} to {all_db}")
         # TODO: flush out saved packets
+
+if __name__ == "__main__":
+    main()
