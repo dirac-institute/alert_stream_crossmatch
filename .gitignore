@@ -11,4 +11,7 @@ catchup.sh
 local/old_results
 local/cutouts_debug
 local/sample_data
+<<<<<<< HEAD
 *.icloud
+=======
+>>>>>>> 22f30a7 (folder for sample data)

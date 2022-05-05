@@ -299,12 +299,8 @@ def check_for_new_sources(packets_to_simbad, sources_saved, database):
         conn = create_connection(database)
         # Add to lightcurve
         dflc = make_dataframe(packet, repeat_obs=True)
-<<<<<<< HEAD
         if last_obs_gt_30(conn, ztf_object_id, packet['candidate']['jd']): # pull in ND data
             dflc = make_dataframe(packet, repeat_obs=False)
-=======
-        # TODO: calculate EWMA8
->>>>>>> ec21f40 (added comments in prep for refactor)
         insert_lc_dataframe(conn, dflc)
         logging.debug(f"Successfully updated lightcurve data from {ztf_object_id} to database.")
         # Save most recent cutout
