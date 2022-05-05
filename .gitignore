@@ -10,3 +10,4 @@ secrets.csv
 catchup.sh
 local/old_results
 local/cutouts_debug
+local/sample_data
