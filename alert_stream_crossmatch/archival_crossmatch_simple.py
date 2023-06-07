@@ -23,7 +23,7 @@ from astropy.io import fits
 from astroquery.simbad import Simbad
 from .constants import UTCFormatter, LOGGING, BASE_DIR, DB_DIR, FITS_DIR, CATALOG_DIR, SIMBAD_EXCLUDES, GROUP_ID_PREFIX, KAFKA_TIMEOUT, ARCHIVAL_DIR
 from .db_caching import create_connection, insert_data, update_value, insert_lc_dataframe, \
-    get_cached_ids, create_db, add_db2_to_db1
+    get_cached_ids, init_db, add_db2_to_db1
 
 # Example command line execution:
 
@@ -491,7 +491,7 @@ def consume_tarball(tarball_path):
 
 
     tarball_day = tarball_path.split("/")[-1].split(".")[0].split("_")[-1]
-    create_db(f'_{tarball_day}', subfolder='archival/')
+    init_db(f'_{tarball_day}', subfolder='archival/')
     database = DB_DIR + f'archival/sqlite_{tarball_day}.db'
 
     now = datetime.datetime.now().strftime("%d%m%y_%H%M%S")
