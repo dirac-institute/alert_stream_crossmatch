@@ -15,6 +15,36 @@ import sys
 
 DB_DIR = '../local/db/'
 
+ZTF_objects_columns = {"ZTF_object_id": "text",
+                    "SIMBAD_otype": "text",
+                    "ra": "float",
+                    "dec": "float",
+                    "xray_name": "text",
+                    "SIMBAD_include": "int",
+                    "last_obs": "float",
+                    "seen_flag": "int",
+                    "interest_flag": "int",
+                    "notes": "text",
+                    "EWMA8": "float",
+                    "distpsnr" : "float",
+                    "objectidps": "long",
+                    "sgmag" : "float",
+                    "srmag" : "float",
+                    "simag" : "float"}
+
+lightcurves_columns = {"ZTF_object_id": "text",
+                    "jd": "text",
+                    "fid": "text",
+                    "magpsf": "float",
+                    "sigmapsf": "float",
+                    "diffmaglim": "float",
+                    "isdiffpos": "text",
+                    "magnr": "float",
+                    "sigmagnr": "float",
+                    "field": "int",
+                    "rcid": "int"}
+
+
 
 def create_connection(db_file):
     """ Create a database connection to the SQLite database
@@ -29,15 +59,27 @@ def create_connection(db_file):
     return conn
 
 
-def create_table(conn, create_table_sql):
-    """ Create a table from the create_table_sql statement
-    """
+def create_table(conn, table_name, columns):
     try:
-        cur = conn.cursor()
-        cur.execute(create_table_sql)
-        cur.close()
-    except Error as e:
-        raise Exception(f"Error creating table {e}")
+        cursor = conn.cursor()
+
+        # Construct the CREATE TABLE query
+        create_query = f"CREATE TABLE IF NOT EXISTS {table_name} ("
+
+        for column_name, data_type in columns.items():
+            create_query += f"{column_name} {data_type}, "
+
+        create_query = create_query.rstrip(", ")  # Remove the trailing comma and space
+        create_query += ")"
+
+        # Execute the CREATE TABLE query
+        cursor.execute(create_query)
+
+        # Commit the changes to the database
+        conn.commit()
+
+    except Exception as e:
+        print(f"An exception occurred while creating the table: {str(e)}")
 
 def add_column(conn, table_name, column_name, column_type):
     """ Add a column to table
@@ -175,41 +217,12 @@ def insert_lc_dataframe(conn, df):
     df.to_sql('lightcurves', conn, if_exists='append', index=False)
 
 
-def create_db(suffix, subfolder=''):
-    database = DB_DIR + subfolder + 'sqlite{}.db'.format(suffix)
-
-    sql_create_ZTF_objects_table = """CREATE TABLE IF NOT EXISTS ZTF_objects (
-                                    ZTF_object_id text,
-                                    SIMBAD_otype text,
-                                    ra float,
-                                    dec float,
-                                    xray_name text,
-                                    SIMBAD_include int,
-                                    last_obs float,
-                                    seen_flag int,
-                                    interest_flag int,
-                                    notes text,
-                                    EWMA8 float
-                                );"""
-
-    sql_create_lightcurves_table = """CREATE TABLE IF NOT EXISTS lightcurves (
-                                    ZTF_object_id text,
-                                    jd text,
-                                    fid text,
-                                    magpsf float,
-                                    sigmapsf float,
-                                    diffmaglim float,
-                                    isdiffpos text,
-                                    magnr float,
-                                    sigmagnr float,
-                                    field int,
-                                    rcid int
-                                );"""
-
+def init_db(suffix, fp=DB_DIR, subfolder=''):
+    database = fp + subfolder + 'sqlite{}.db'.format(suffix)
     conn = create_connection(database)
     if conn is not None:
-        create_table(conn, sql_create_ZTF_objects_table)
-        create_table(conn, sql_create_lightcurves_table)
+        create_table(conn, "ZTF_objects", ZTF_objects_columns)
+        create_table(conn, "lightcurves", lightcurves_columns)
     else:
         print("Error! Cannot create the database connection.")
 
@@ -239,7 +252,7 @@ def main():
     # create tables
     if conn is not None:
         # create tasks table
-        create_db(sys.argv[2])
+        init_db(sys.argv[2])
     else:
         print("Error! cannot create the database connection.")
 
