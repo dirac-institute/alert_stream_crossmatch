@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import os
 import sys
 import multiprocessing as mp
 sys.path.append('..')
@@ -8,10 +9,12 @@ from alert_stream_crossmatch.archival_crossmatch_simple import consume_tarball
 
 alerts = []
 
-test = open("ztf_partnership_alerts.txt")
+#test = open("ztf_partnership_alerts.txt")
+test = open("test_alerts_list.txt")
 alerts = test.read().splitlines()# test.readlines()
 print(alerts)
-ncpus=20
+ncpus=8
+os.nice(1)
 p = mp.Pool(ncpus)
 p.map(consume_tarball, alerts)
 
