@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
-import aplpy
+# import aplpy
 import glob
 
 from astropy.io import fits
