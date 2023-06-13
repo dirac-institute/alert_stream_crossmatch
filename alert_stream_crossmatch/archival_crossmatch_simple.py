@@ -22,8 +22,8 @@ from astropy.io import fits
 
 from astroquery.simbad import Simbad
 from .constants import UTCFormatter, LOGGING, BASE_DIR, DB_DIR, FITS_DIR, CATALOG_DIR, SIMBAD_EXCLUDES, GROUP_ID_PREFIX, KAFKA_TIMEOUT, ARCHIVAL_DIR
-from .db_caching import create_connection, insert_data, update_value, insert_lc_dataframe, \
-    get_cached_ids, init_db, add_db2_to_db1
+from .db_caching import create_connection, cache_ZTF_object, insert_data, update_value, insert_lc_dataframe, \
+    get_cached_ids, create_db, add_db2_to_db1
 
 # Example command line execution:
 
@@ -41,14 +41,6 @@ def exception_handler(func):
 
     return wrapper
 
-@exception_handler
-def galactic_latitude(self, ra, dec):
-    # l_ref = 33.012 # deg
-    ra_ref = 282.25 # deg
-    g = 62.6 # deg
-    b =  np.arcsin(np.sin(np.deg2rad(dec)) * np.cos(np.deg2rad(g)) - \
-                   np.cos(np.deg2rad(dec)) * np.sin(np.deg2rad(g)) * np.sin(np.deg2rad(ra) - np.deg2rad(ra_ref)))
-    return np.rad2deg(b)
 
 @exception_handler
 def read_avro_file(fname):
@@ -70,18 +62,8 @@ def read_avro_bytes(buf):
 
 @exception_handler
 def get_candidate_info(packet):
-    info = {"ra": packet["candidate"]["ra"], "dec": packet["candidate"]["dec"],
+    return {"ra": packet["candidate"]["ra"], "dec": packet["candidate"]["dec"],
             "object_id": packet["objectId"], "candid": packet["candid"]}
-    # if packet["candidate"]["distpsnr1"] is None:
-    #     info["distpsnr1"] = -999
-    for i in range(1, 4):
-        if (packet["candidate"][f"distpsnr{i}"] < 2) and (packet["candidate"][f"distpsnr{i}"] > 0):
-            info[f"distpsnr{i}"] = packet["candidate"][[f"distpsnr{i}"]
-            info[f"sgmag{i}"] = packet["candidate"][f"sgmag{i}"]
-            info[f"srmag{i}"] = packet["candidate"][f"srmag{i}"]
-            info[f"simag{i}"] = packet["candidate"][f"simag{i}"]
-            info[f"objectidps{i}"] = packet["candidate"][f"objectidps{i}"]
-
 
 
 @exception_handler
@@ -98,50 +80,16 @@ def save_cutout_fits(packet, output):
 def make_dataframe(packet, repeat_obs=True):
     """Extract relevant lightcurve data from packet into pandas DataFrame."""
     df = pd.DataFrame(packet["candidate"], index=[0])
-    columns = ["ZTF_object_id", "jd", "fid", "magpsf", "sigmapsf", "diffmaglim",
-               "isdiffpos", "magnr", "sigmagnr", "field", "rcid"]
-
     if repeat_obs:
         df["ZTF_object_id"] = packet["objectId"]
-        return df[columns]
+        return df[["ZTF_object_id", "jd", "fid", "magpsf", "sigmapsf", "diffmaglim",
+                   "isdiffpos", "magnr", "sigmagnr", "field", "rcid"]]
 
     df_prv = pd.DataFrame(packet["prv_candidates"])
     df_merged = pd.concat([df, df_prv], ignore_index=True)
     df_merged["ZTF_object_id"] = packet["objectId"]
-    return df_merged[columns]
-
-
-@exception_handler
-def load_rosat():
-    # Open ROSAT catalog
-    rosat_fits = fits.open("/epyc/data/rosat_2rxs/cat2rxs.fits")
-
-    # Make ROSAT data into a pandas dataframe
-    rosat_data = rosat_fits[1].data
-    dfx = pd.DataFrame(rosat_data)
-    rosat_fits.close()
-
-    # exclude sources that are not observable
-    dfx = dfx[dfx.DEC_DEG >= -30]
-
-    # List ROSAT error position [arcsec]
-    dfx["err_pos_arcsec"] = np.sqrt(((dfx.XERR * 45) ** 2. + (dfx.YERR * 45) ** 2.) + 0.6 ** 2.) * SIGMA_TO_95pctCL
-
-    # Put ROSAT ra and dec list in SkyCoord [degrees]
-    rosat_skycoord = SkyCoord(ra=dfx.RA_DEG, dec=dfx.DEC_DEG,
-                              frame="icrs", unit=(u.deg))
-
-    return dfx[["xray_name", "RA_DEG", "DEC_DEG", "err_pos_arcsec"]], rosat_skycoord
-
-@exception_handler
-def load_xray():
-    # open combined xray catalog
-    dfx = pd.read_csv(CATALOG_DIR)
-    xray_skycoord = SkyCoord(ra=dfx.RA, dec=dfx.DEC,
-                              frame="icrs", unit=(u.deg))
-    return dfx[["xray_name", "RA", "DEC", "err_pos_arcsec"]], xray_skycoord
-
-
+    return df_merged[["ZTF_object_id", "jd", "fid", "magpsf", "sigmapsf", "diffmaglim",
+                      "isdiffpos", "magnr", "sigmagnr", "field", "rcid"]]
 
 @exception_handler
 def not_moving_object(packet):
@@ -213,67 +161,6 @@ def is_excluded_simbad_class(ztf_source):
         logging.exception(f"Error querying Simbad for {ztf_source['object_id']}", e)
         return False
 
-
-def ztf_rosat_crossmatch(ztf_source, xray_skycoord, dfx):
-    """
-    Cross match ZTF and ROSAT data using astropy.coordinates.SkyCoord
-
-    Parameters:
-                ztf_source: dict
-                    {'ra': float (degrees), 'dec': float (degrees),
-                    'object_id': string, 'candid': int}
-
-                xray_skycoord: astropy.coordinates.SkyCoord
-                    ROSAT catalog in astropy.coordinates.SkyCoord
-
-                dfx: pandas.DataFrame
-                    slim ROSAT catalog
-
-    Return:
-            matched_source: dict or None
-                if a source matches, return
-                    {'ra': float (degrees), 'dec': float (degrees),
-                    'source_name': string, 'sep2d': float (arcsec)}
-                else None
-    """
-    try:
-        # Input avro data ra and dec in SkyCoords
-        avro_skycoord = SkyCoord(ra=ztf_source["ra"], dec=ztf_source["dec"],
-                                 frame="icrs", unit=(u.deg))
-
-        # Finds the nearest ROSAT source's coordinates to the avro files ra[deg] and dec[deg]
-        match_idx, match_sep2d, _ = avro_skycoord.match_to_catalog_sky(xray_skycoord)
-
-        match_row = dfx.iloc[match_idx]
-
-        matched = match_sep2d[0] <= match_row["err_pos_arcsec"] * u.arcsecond
-
-        match_result = {"match_name": match_row["xray_name"],
-                        "match_ra": match_row["RA"],
-                        "match_dec": match_row["DEC"],
-                        "match_err_pos": match_row["err_pos_arcsec"],
-                        "match_sep": match_sep2d[0].to(u.arcsecond).value}
-
-        if matched:
-            logging.info(
-                f"{ztf_source['object_id']} ({avro_skycoord.to_string('hmsdms')}; {ztf_source['candid']}) matched {match_result['match_name']} ({match_result['match_sep']:.2f} arcsec away)")
-            return match_result
-
-        else:
-            # logging.debug(f"{ztf_source['object_id']} ({avro_skycoord.to_string('hmsdms')}) did not match (nearest source {match_result['match_name']}, {match_result['match_sep']:.2f} arcsec away")
-            return None
-    except Exception as e:
-        logging.exception(f"Unable to crossmatch {ztf_source['object_id']} with ROSAT", e)
-
-
-def mag_difference(ztf_source):
-    filter_color = {1:"g", 2:"r", 3:"i"}
-    band = filter_color[ztf_source["fid"]]
-    for i in range(1, 4):
-        if (ztf_source[f"s{band}mag{i}"] - ztf_source["magpsf"]) > 3:
-            return i
-    return 0
-
 @exception_handler
 def save_to_db(packet, otype, sources_saved, database, interest):
     """Save matches to database
@@ -320,7 +207,7 @@ def check_for_new_sources(packets_to_simbad, sources_saved, database):
         insert_lc_dataframe(conn, dflc)
         logging.debug(f"Successfully updated lightcurve data from {ztf_object_id} to database.")
         # Save most recent cutout
-        # save_cutout_fits(packet, FITS_DIR)
+        save_cutout_fits(packet, FITS_DIR)
         logging.debug(f"Successfully updated cutouts of {ztf_object_id}")
         # Update some of the table values: last_obs...
         data_to_update = {"last_obs": packet["candidate"]["jd"]}
@@ -328,47 +215,6 @@ def check_for_new_sources(packets_to_simbad, sources_saved, database):
         conn.close()
 
     return new_packets
-
-# TODO: add criteria for amplitude cut
-@exception_handler
-def process_ac_packet(packet, xray_skycoord, dfx, saved_packets, sources_seen, database):
-    """Examine packet for matches in the ROSAT database. Save object to database if match found"""
-    rb_key = "drb" if "drb" in packet["candidate"].keys() else 'rb'
-    if packet["candidate"][rb_key] < 0.8:  # if packet real/bogus score is low, ignore
-        return
-    # # Not a solar system object (or no known obj within 5")
-    if not((packet["candidate"]['ssdistnr'] is None) or (packet["candidate"]['ssdistnr'] < 0) or (packet["candidate"]['ssdistnr'] > 5)):
-        return
-
-    # Read in avro
-    ztf_source = get_candidate_info(packet)
-
-    # If moving, return
-    if not not_moving_object(packet):
-        return
-
-    conn = create_connection(database)
-    if packet["objectId"] in sources_seen:
-        logging.debug(f"{packet['objectId']} already known match, adding packet to packets_from_kafka")
-        saved_packets.append(packet)
-        sources_seen.update((packet["objectId"],))
-        conn.close()
-        logging.debug(f"Total of {len(saved_packets)} saved for query.")
-    else:
-        pass_ac_band = mag_difference(ztf_source)
-        if pass_ac:
-            logging.debug("adding packet to packets_from_kafka")
-            saved_packets.append(packet)
-            sources_seen.update((packet["objectId"],))
-
-            i = pass_ac
-            data_to_insert = {"ZTF_object_id": packet["objectId"], "distpsnr": ztf_source[f"distpsnr{i}"],
-                              "sgmag": ztf_source[f"sgmag{i}"], "sgmag": ztf_source[f"srmag{i}"],
-                              "sgmag": ztf_source[f"simag{i}"], "objectidps": ztf_source[f"objectidps{i}"}
-            insert_data(conn, "ZTF_objects", data_to_insert)
-            logging.debug(f"Successfully saved {packet['objectId']} to database")
-            conn.close()
-            logging.debug(f"Total of {len(saved_packets)} saved for query.")
 
 
 @exception_handler
@@ -491,7 +337,7 @@ def consume_tarball(tarball_path):
 
 
     tarball_day = tarball_path.split("/")[-1].split(".")[0].split("_")[-1]
-    init_db(f'_{tarball_day}', subfolder='archival/')
+    create_db(f'_{tarball_day}', subfolder='archival/')
     database = DB_DIR + f'archival/sqlite_{tarball_day}.db'
 
     now = datetime.datetime.now().strftime("%d%m%y_%H%M%S")
