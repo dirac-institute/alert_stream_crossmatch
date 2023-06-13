@@ -1,0 +1,8 @@
+/epyc/data/ztf/alerts/public/ztf_public_20230526.tar.gz
+/epyc/data/ztf/alerts/public/ztf_public_20230527.tar.gz
+/epyc/data/ztf/alerts/public/ztf_public_20230529.tar.gz
+/epyc/data/ztf/alerts/public/ztf_public_20230530.tar.gz
+/epyc/data/ztf/alerts/public/ztf_public_20230602.tar.gz
+/epyc/data/ztf/alerts/public/ztf_public_20230603.tar.gz
+/epyc/data/ztf/alerts/public/ztf_public_20230604.tar.gz
+/epyc/data/ztf/alerts/public/ztf_public_20230605.tar.gz
