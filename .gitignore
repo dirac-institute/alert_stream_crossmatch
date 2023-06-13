@@ -12,3 +12,4 @@ local/old_results
 local/cutouts_debug
 local/sample_data
 *.icloud
+.ipynb_checkpoints/
