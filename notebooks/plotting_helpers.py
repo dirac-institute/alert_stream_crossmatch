@@ -7,6 +7,14 @@ import glob
 from astropy.io import fits
 from astropy.time import Time
 
+def galactic_latitude(ra, dec):
+    # l_ref = 33.012 # deg
+    ra_ref = 282.25 # deg
+    g = 62.6 # deg
+    b =  np.arcsin(np.sin(np.deg2rad(dec)) * np.cos(np.deg2rad(g)) - \
+                   np.cos(np.deg2rad(dec)) * np.sin(np.deg2rad(g)) * np.sin(np.deg2rad(ra) - np.deg2rad(ra_ref)))
+    return np.rad2deg(b)
+
 def plot_lightcurve(dflc, obj_id='', days_ago=True):
     filter_color = {1:'green', 2:'red', 3:'pink'}
     if days_ago:
@@ -34,7 +42,7 @@ def plot_lightcurve(dflc, obj_id='', days_ago=True):
         plt.title(obj_id)
 
         
-def plot_dc_lightcurve(dflc, obj_id='', days_ago=True, ema='', ema_diff='', offset=0, metric_thres=.25, show=True):
+def plot_dc_lightcurve(dflc, obj_id='', days_ago=True, ema='', ema_diff='', offset=0, metric_thres=.25, show=True, g=-1, r=-1):
     
     filter_color = {1:'green', 2:'red', 3:'pink'}
     if days_ago:
@@ -66,7 +74,10 @@ def plot_dc_lightcurve(dflc, obj_id='', days_ago=True, ema='', ema_diff='', offs
         wnodet = (dflc.fid == fid) & dflc.dc_mag.isnull()
         if np.sum(wnodet):
             ax.scatter(t[wnodet],dflc.loc[wnodet,'dc_mag_ulim'], marker='v',color=color,alpha=0.25)
-
+    if g > 0:
+        ax.axhline(g, color='g')
+    if r > 0:
+        ax.axhline(r, color='r')
     ax.invert_yaxis()
     ax.invert_xaxis()
     ax.set_xlabel(xlabel)
