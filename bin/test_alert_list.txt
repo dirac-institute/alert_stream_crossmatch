@@ -1,8 +1,6 @@
-/epyc/data/ztf/alerts/public/ztf_public_20230526.tar.gz
-/epyc/data/ztf/alerts/public/ztf_public_20230527.tar.gz
-/epyc/data/ztf/alerts/public/ztf_public_20230529.tar.gz
-/epyc/data/ztf/alerts/public/ztf_public_20230530.tar.gz
-/epyc/data/ztf/alerts/public/ztf_public_20230602.tar.gz
-/epyc/data/ztf/alerts/public/ztf_public_20230603.tar.gz
-/epyc/data/ztf/alerts/public/ztf_public_20230604.tar.gz
-/epyc/data/ztf/alerts/public/ztf_public_20230605.tar.gz
+/epyc/data/ztf/alerts/public/ztf_public_20230607.tar.gz
+/epyc/data/ztf/alerts/public/ztf_public_20230608.tar.gz
+/epyc/data/ztf/alerts/public/ztf_public_20230609.tar.gz
+/epyc/data/ztf/alerts/public/ztf_public_20230610.tar.gz
+/epyc/data/ztf/alerts/public/ztf_public_20230613.tar.gz
+/epyc/data/ztf/alerts/public/ztf_public_20230614.tar.gz
