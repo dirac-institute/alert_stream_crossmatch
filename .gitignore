@@ -13,3 +13,4 @@ local/cutouts_debug
 local/sample_data
 *.icloud
 .ipynb_checkpoints/
+local/db/combined/*.csv
