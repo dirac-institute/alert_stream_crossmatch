@@ -344,7 +344,7 @@ def check_simbad_and_save(packets_to_simbad, sources_saved, database):
             # assert(len(sc) == len(idx))
         else:
             logging.info("No matches found in SIMBAD")
-            return
+            # return
 
     except Exception as e:
         logging.exception("Error querying Simbad", e)
@@ -365,7 +365,7 @@ def check_simbad_and_save(packets_to_simbad, sources_saved, database):
         else:
             # no match in simbad,
             logging.info(f"{packet['objectId']} not found in Simbad")
-            save_to_db(packet, None, sources_saved, database, interest=0)
+            save_to_db(packet, None, sources_saved, database, interest=1)
 
 
 def main():
