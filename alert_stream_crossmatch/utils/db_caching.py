@@ -30,7 +30,7 @@ ZTF_objects_columns = {"ZTF_object_id": "text",
                     "objectidps": "long",
                     "sgmag" : "float",
                     "srmag" : "float",
-                    "simag" : "float"
+                    "simag" : "float",
                     "sgscore": "float"}
 
 lightcurves_columns = {"ZTF_object_id": "text",
