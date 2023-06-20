@@ -10,7 +10,7 @@ DB_DIR = f"{BASE_DIR}../local/db/"
 FITS_DIR = f"{BASE_DIR}../local/cutouts/"
 ARCHIVAL_DIR = "/epyc/data/ztf/alerts/"
 # Catalog requires xray_name, RA_DEG, DEC_DEG, and err_pos_arcsec columns
-CATALOG_DIR = '/epyc/users/ykwang/data/xray_catalog.csv'  # Change me 
+CATALOG_DIR = '/epyc/users/ykwang/data/xray_catalog.csv'  # Change me
 
 # group id for kafka consumer
 GROUP_ID_PREFIX = 'uw_xraytest'
@@ -20,7 +20,7 @@ KAFKA_TIMEOUT = 20000 #7000000 # ms
 
 SIMBAD_EXCLUDES = ['G?', 'SC?', 'C?G', 'Gr?', 'As?', 'Y*?', 'pr?', 'TT?', 'Mi?', 'SCG', 'ClG',
 'GrG', 'CGG', 'PaG', 'IG', 'Y*O', 'pr*', 'TT*', 'Or*', 'FU*', 'BY*', 'RS*',
-'Pu*', 'RR*', 'Ce*', 'dS*', 'RV*', 'WV*', 'bC*', 'cC*', 'gD*', 'LP*', 'Mi*',
+'Pu*', 'RR*', 'Ce*', 'dS*', 'RV*', 'WV*', 'bC*', 'cC*', 'gD*', 'LP*', 'LP?', 'Mi*',
 'SN*', 'su*', 'G', 'PoG', 'GiC', 'BiC', 'GiG', 'GiP', 'HzG', 'ALS', 'LyA',
 'DLA', 'mAL', 'LLS', 'BAL', 'rG', 'H2G', 'LSB', 'AG?', 'Q?', 'Bz?', 'BL?',
 'EmG', 'SBG', 'bCG', 'LeI', 'LeG', 'LeQ', 'AGN', 'LIN', 'SyG', 'Sy1', 'Sy2',

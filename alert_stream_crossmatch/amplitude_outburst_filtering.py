@@ -77,6 +77,7 @@ def get_candidate_info(packet):
             info[f"sgmag{i}"] = packet["candidate"][f"sgmag{i}"]
             info[f"srmag{i}"] = packet["candidate"][f"srmag{i}"]
             info[f"simag{i}"] = packet["candidate"][f"simag{i}"]
+            info[f"sgscore{i}"] = packet["candidate"][f"sgscore{i}"]
             info[f"objectidps{i}"] = packet["candidate"][f"objectidps{i}"]
     return info
 
@@ -301,7 +302,8 @@ def process_ac_packet(packet, saved_packets, sources_seen, database):
             i = pass_ac
             data_to_insert = {"ZTF_object_id": packet["objectId"], "distpsnr": ztf_source[f"distpsnr{i}"],
                               "sgmag": ztf_source[f"sgmag{i}"], "srmag": ztf_source[f"srmag{i}"],
-                              "simag": ztf_source[f"simag{i}"], "objectidps": ztf_source[f"objectidps{i}"]}
+                              "simag": ztf_source[f"simag{i}"], "objectidps": ztf_source[f"objectidps{i}"],
+                              "sgscore": ztf_source[f"sgscore{i}"]}
             insert_data(conn, "ZTF_objects", data_to_insert)
             logging.debug(f"Successfully saved {packet['objectId']} to database")
             conn.close()
