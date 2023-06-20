@@ -428,7 +428,7 @@ def consume_tarball(tarball_path):
     packets_from_kafka = []
     packets_to_simbad = []
     # conn = create_connection(database)
-    all_db = DB_DIR + 'sqlite_all3.db'
+    # all_db = DB_DIR + 'sqlite_all3.db'
     total_conn = create_connection(database)
     sources_saved = set(get_cached_ids(total_conn).values)    # These are sources in both tables (ZTF_objects and lightcurves)
     sources_seen = set(get_cached_ids(total_conn).values)     # These are sources only in ZTF objects
@@ -476,8 +476,8 @@ def consume_tarball(tarball_path):
                 sources_saved, database)
         tbatch = time.perf_counter()
         logging.info(f"finished consuming all packets in {tarball_path.split('/')[-1]}")
-        add_db2_to_db1(all_db, database)
-        logging.info(f"added rows from {database} to {all_db}")
+        # add_db2_to_db1(all_db, database)
+        # logging.info(f"added rows from {database} to {all_db}")
         # TODO: flush out saved packets
 
 if __name__ == "__main__":
