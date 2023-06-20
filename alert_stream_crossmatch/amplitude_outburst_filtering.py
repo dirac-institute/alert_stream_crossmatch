@@ -313,7 +313,9 @@ def process_ac_packet(packet, saved_packets, sources_seen, database):
 @exception_handler
 def check_simbad_and_save(packets_to_simbad, sources_saved, database):
     logging.info("Checking packets for new sources")
-    new_packets_to_simbad = check_for_new_sources(packets_to_simbad, sources_saved, database)
+
+    # don't check for old sources in archival search
+    new_packets_to_simbad = packets_to_simbad # check_for_new_sources(packets_to_simbad, sources_saved, database)
     logging.debug(f"{len(packets_to_simbad) - len(new_packets_to_simbad)} sources already cached.")
 
     # Return if sources were previously seen and recorded
@@ -346,7 +348,10 @@ def check_simbad_and_save(packets_to_simbad, sources_saved, database):
             # assert(len(sc) == len(idx))
         else:
             logging.info("No matches found in SIMBAD")
-            # return
+            for i, packet in enumerate(new_packets_to_simbad):
+                logging.info(f"{packet['objectId']} not found in Simbad")
+                save_to_db(packet, None, sources_saved, database, interest=1)
+            return
 
     except Exception as e:
         logging.exception("Error querying Simbad", e)
