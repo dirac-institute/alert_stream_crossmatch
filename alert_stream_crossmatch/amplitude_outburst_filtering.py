@@ -389,7 +389,7 @@ def main():
     # program = 'public' if args.program_id == 1 else 'partnership'
 #     tarball_path = args.tarball # .split("/")[-1] # f'ztf_{program}_{TIMESTAMP}.tar.gz'
     # tarball_dir = ARCHIVAL_DIR + program + '/' + tarball_name
-    test = open("../bin/test_alert_list.txt")
+    test = open("alert_list.txt")
     alerts = test.read().splitlines()# test.readlines()
     print(alerts)
     ncpus=20
