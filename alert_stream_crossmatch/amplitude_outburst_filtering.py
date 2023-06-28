@@ -376,13 +376,14 @@ def check_simbad_and_save(packets_to_simbad, sources_saved, database):
 
 
 def main():
-#     parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser()
     #parser.add_argument("date", type=str, help="UTC date as YYMMDD")
     #parser.add_argument("program_id", type=int, help="Program ID (1 or 2)")
 #     parser.add_argument("tarball", type=str, help="name of tarball file (.tar.gz)")
     # parser.add_argument("suffix", type=str, help="suffix of db")
+    parser.add_argument("path", type=str, help="path of tarball")
 
-#     args = parser.parse_args()
+    args = parser.parse_args()
 #     suffix = 'archival'
     # if len(args.date) != 6:
     #     raise ValueError(f"Date must be specified as YYMMDD.  Provided {args.date}")
@@ -394,14 +395,17 @@ def main():
     # program = 'public' if args.program_id == 1 else 'partnership'
 #     tarball_path = args.tarball # .split("/")[-1] # f'ztf_{program}_{TIMESTAMP}.tar.gz'
     # tarball_dir = ARCHIVAL_DIR + program + '/' + tarball_name
-    test = open("alert_list.txt")
-    alerts = test.read().splitlines()# test.readlines()
-    print(alerts)
-    ncpus=20
-    os.nice(1)
-    p = mp.Pool(ncpus)
-    p.map(consume_tarball, alerts)
-    # consume_tarball(tarball_path)
+    if args.path:
+        consume_tarball(args.path)
+    else:
+        test = open("alert_list.txt")
+        alerts = test.read().splitlines()# test.readlines()
+        print(alerts)
+        ncpus=20
+        os.nice(1)
+        p = mp.Pool(ncpus)
+        p.map(consume_tarball, alerts)
+        # consume_tarball(tarball_path)
 
 def consume_tarball(tarball_path):
     tar = tarfile.open(tarball_path)
