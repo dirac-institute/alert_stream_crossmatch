@@ -14,3 +14,4 @@ local/sample_data
 *.icloud
 .ipynb_checkpoints/
 local/db/combined/*.csv
+local/lcs/archival/*.csv
