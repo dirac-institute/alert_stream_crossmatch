@@ -1,3 +1,4 @@
+# Combines db tables of date from cmd line with objs and lcs csvs
 import pandas as pd
 import numpy as np
 import argparse
